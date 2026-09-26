@@ -4,30 +4,20 @@ const bcrypt = require('bcryptjs');
 const { initDatabase, run, get, all } = require('./db');
 const { createToken, authMiddleware, requireRoles } = require('./auth');
 
-const allowedOrigins = [
-    'http://localhost:5173',
-    'https://projectcuahoangvu-frontend.onrender.com'
-];
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-    origin: function (origin, callback) {
-        // Cho phép Postman/curl hoặc request không có Origin
-        if (!origin) {
-            return callback(null, true);
-        }
-
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-
-        return callback(new Error('Not allowed by CORS'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+  origin: [
+    'http://localhost:5173',
+    'https://projectcuahoangvu-1.onrender.com'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
+
+app.options('*', cors());
 
 app.use(express.json());
 
