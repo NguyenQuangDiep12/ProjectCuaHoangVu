@@ -4,10 +4,31 @@ const bcrypt = require('bcryptjs');
 const { initDatabase, run, get, all } = require('./db');
 const { createToken, authMiddleware, requireRoles } = require('./auth');
 
+const allowedOrigins = [
+    'http://localhost:5173',
+    'https://projectcuahoangvu-frontend.onrender.com'
+];
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({
+    origin: function (origin, callback) {
+        // Cho phép Postman/curl hoặc request không có Origin
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 const ROLE_STAFF = ['admin', 'lecturer'];
@@ -360,6 +381,32 @@ app.get('/api/news', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Lỗi server khi lấy danh sách tin tức.' });
+  }
+});
+
+app.get('/api/users', authMiddleware, requireRoles('admin'), async (req, res) => {
+  try {
+    const users = await all(`
+      SELECT
+        id,
+        username,
+        fullName,
+        email,
+        role,
+        studentCode,
+        lecturerCode,
+        createdAt
+      FROM users
+      ORDER BY id DESC
+    `);
+
+    res.json(users);
+  } catch (error) {
+    console.error('GET /api/users error:', error);
+
+    res.status(500).json({
+      message: 'Không thể lấy danh sách người dùng.'
+    });
   }
 });
 
