@@ -73,27 +73,41 @@ export default function RegisterPage() {
             max={30}
             onChange={handleChange} 
             required />
-          <input name="fullName" placeholder="Họ và tên" value={form.fullName} onChange={handleChange} required />
-          <input type="email" name="email" placeholder="Email" value={form.email} onChange={handleChange} required />
+          <input 
+            name="fullName" 
+            placeholder="Họ và tên" 
+            value={form.fullName} 
+            onChange={handleChange} 
+            required />
+          <input 
+            type="email" 
+            name="email" 
+            placeholder="Email" 
+            value={form.email} 
+            onChange={handleChange} 
+            required />
 
-          <select name="role" value={form.role} onChange={handleChange}>
+          <select 
+            name="role" 
+            value={form.role} 
+            onChange={handleChange}>
             <option value="student">Student</option>
             <option value="lecturer">Lecturer</option>
           </select>
 
           {form.role === 'student' && (
             <>
-              <input name="studentCode" placeholder="Mã sinh viên" value={form.studentCode} onChange={handleChange} required />
-              <input name="className" placeholder="Lớp" value={form.className} onChange={handleChange} />
-              <input name="major" placeholder="Ngành học" value={form.major} onChange={handleChange} />
+              <input name="studentCode" min={8} max={32} placeholder="Mã sinh viên" value={form.studentCode} onChange={handleChange} required />
+              <input name="className" min={8} max={32} placeholder="Lớp" value={form.className} onChange={handleChange} />
+              <input name="major" required placeholder="Ngành học" value={form.major} onChange={handleChange} />
               <select name="gender" value={form.gender} onChange={handleChange}>
                 <option value="">Chọn giới tính</option>
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
                 <option value="Khác">Khác</option>
               </select>
-              <input type="date" name="dob" value={form.dob} onChange={handleChange} />
-              <input name="phone" placeholder="Số điện thoại" value={form.phone} onChange={handleChange} />
+              <input type="date" required name="dob" value={form.dob} onChange={handleChange} />
+              <input name="phone" min={9} max={12} placeholder="Số điện thoại" value={form.phone} onChange={handleChange} />
             </>
           )}
 
