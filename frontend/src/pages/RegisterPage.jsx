@@ -75,15 +75,19 @@ export default function RegisterPage() {
             required />
           <input 
             name="fullName" 
-            placeholder="Họ và tên" 
+            placeholder="Họ và tên"
             value={form.fullName} 
+            min={12}
+            max={50}
             onChange={handleChange} 
             required />
           <input 
             type="email" 
             name="email" 
             placeholder="Email" 
-            value={form.email} 
+            value={form.email}
+            min={8}
+            max={32}
             onChange={handleChange} 
             required />
 
