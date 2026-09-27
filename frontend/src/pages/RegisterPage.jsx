@@ -56,8 +56,23 @@ export default function RegisterPage() {
         {success && <div className="alert success">{success}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form">
-          <input name="username" placeholder="Username" value={form.username} onChange={handleChange} required />
-          <input type="password" name="password" placeholder="Password" value={form.password} onChange={handleChange} required />
+          <input 
+            name="username" 
+            placeholder="Username" 
+            value={form.username} 
+            min={12}
+            max={50}
+            onChange={handleChange} 
+            required />
+          <input 
+            type="password" 
+            name="password" 
+            placeholder="Password" 
+            value={form.password} 
+            min={6}
+            max={30}
+            onChange={handleChange} 
+            required />
           <input name="fullName" placeholder="Họ và tên" value={form.fullName} onChange={handleChange} required />
           <input type="email" name="email" placeholder="Email" value={form.email} onChange={handleChange} required />
 

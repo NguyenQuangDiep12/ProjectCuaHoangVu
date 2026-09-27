@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: '', password: '' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -20,7 +20,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await login(form.username, form.password);
+      await login(form.email, form.password);
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -77,14 +77,16 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="login-input-group">
-              <label htmlFor="username">Tài khoản</label>
+              <label htmlFor="email">Tài khoản</label>
               <input
-                id="username"
+                id="email"
                 type="text"
-                name="username"
-                placeholder="Nhập username"
-                value={form.username}
+                name="email"
+                placeholder="Nhập email"
+                value={form.email}
                 onChange={handleChange}
+                min={12}
+                max={50}
                 required
               />
             </div>
@@ -97,6 +99,8 @@ export default function LoginPage() {
                 name="password"
                 placeholder="Nhập password"
                 value={form.password}
+                min={6}
+                max={30}
                 onChange={handleChange}
                 required
               />
@@ -110,9 +114,9 @@ export default function LoginPage() {
           <div className="demo-box login-demo-box">
             <p><strong>Tài khoản test</strong></p>
             <div className="login-demo-list">
-              <span>admin / admin123</span>
-              <span>lecturer1 / lecturer123</span>
-              <span>student1 / student123</span>
+              <span>admin@school.local / admin123</span>
+              <span>lecturer1@school.local / lecturer123</span>
+              <span>student1@school.local / student123</span>
             </div>
           </div>
 
