@@ -421,7 +421,7 @@ async function seedFeedback(feedback) {
 
 async function seedData() {
   const adminId = await seedUser({
-    username: 'admin',
+    username: 'adminaccount1',
     password: 'admin123',
     role: 'admin',
     fullName: 'System Admin',
@@ -429,7 +429,7 @@ async function seedData() {
   });
 
   const lecturerId = await seedUser({
-    username: 'lecturer1',
+    username: 'lectureraccount1',
     password: 'lecturer123',
     role: 'lecturer',
     fullName: 'Nguyen Van Giang',
@@ -450,7 +450,7 @@ async function seedData() {
   });
 
   const studentUserId = await seedUser({
-    username: 'student1',
+    username: 'studentaccount1',
     password: 'student123',
     role: 'student',
     fullName: 'Tran Minh Anh',
