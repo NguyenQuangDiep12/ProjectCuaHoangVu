@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -20,7 +20,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await login(form.email, form.password);
+      await login(form.username, form.password);
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -77,13 +77,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="login-input-group">
-              <label htmlFor="email">Tài khoản</label>
+              <label htmlFor="username">Tài khoản</label>
               <input
-                id="email"
+                id="username"
                 type="text"
-                name="email"
-                placeholder="Nhập email"
-                value={form.email}
+                name="username"
+                placeholder="Nhập username"
+                value={form.username}
                 onChange={handleChange}
                 min={12}
                 max={50}
@@ -114,9 +114,9 @@ export default function LoginPage() {
           <div className="demo-box login-demo-box">
             <p><strong>Tài khoản test</strong></p>
             <div className="login-demo-list">
-              <span>admin@school.local / admin123</span>
-              <span>lecturer1@school.local / lecturer123</span>
-              <span>student1@school.local / student123</span>
+              <span>admin / admin123</span>
+              <span>lecturer1 / lecturer123</span>
+              <span>student1 / student123</span>
             </div>
           </div>
 

@@ -293,13 +293,13 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Vui lòng nhập email và password.' });
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Vui lòng nhập username và password.' });
     }
 
-    const user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    const user = await get('SELECT * FROM users WHERE username = ?', [username]);
 
     if (!user) {
       return res.status(400).json({ message: 'Tài khoản không tồn tại.' });

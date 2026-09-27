@@ -31,10 +31,10 @@ export function AuthProvider({ children }) {
     loadCurrentUser();
   }, [token]);
 
-  async function login(email, password) {
+  async function login(username, password) {
     const data = await apiRequest('/auth/login', {
       method: 'POST',
-      body: { email, password }
+      body: { username, password }
     });
 
     localStorage.setItem('token', data.token);
