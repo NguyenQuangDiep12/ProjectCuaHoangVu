@@ -13,7 +13,7 @@ export default function RegisterPage() {
     studentCode: '',
     className: '',
     major: '',
-    gender: '',
+    gender: 'Nam',
     dob: '',
     phone: ''
   });
@@ -105,7 +105,6 @@ export default function RegisterPage() {
               <input name="className" min={8} max={32} placeholder="Lớp" value={form.className} onChange={handleChange} />
               <input name="major" required placeholder="Ngành học" value={form.major} onChange={handleChange} />
               <select name="gender" value={form.gender} onChange={handleChange}>
-                <option value="">Chọn giới tính</option>
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
                 <option value="Khác">Khác</option>
