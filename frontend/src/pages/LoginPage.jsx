@@ -114,9 +114,9 @@ export default function LoginPage() {
           <div className="demo-box login-demo-box">
             <p><strong>Tài khoản test</strong></p>
             <div className="login-demo-list">
-              <span>admin / admin123</span>
-              <span>lecturer1 / lecturer123</span>
-              <span>student1 / student123</span>
+              <span>adminaccount1 / admin123</span>
+              <span>lectureraccount1 / lecturer123</span>
+              <span>studentaccount1 / student123</span>
             </div>
           </div>
 
