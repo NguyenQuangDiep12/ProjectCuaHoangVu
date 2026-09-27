@@ -60,8 +60,8 @@ export default function RegisterPage() {
             name="username" 
             placeholder="Username" 
             value={form.username} 
-            min={12}
-            max={50}
+            minLength={12}
+            maxLength={50}
             onChange={handleChange} 
             required />
           <input 
@@ -69,16 +69,16 @@ export default function RegisterPage() {
             name="password" 
             placeholder="Password" 
             value={form.password} 
-            min={6}
-            max={30}
+            minLength={6}
+            maxLength={30}
             onChange={handleChange} 
             required />
           <input 
             name="fullName" 
             placeholder="Họ và tên"
             value={form.fullName} 
-            min={12}
-            max={50}
+            minLength={12}
+            maxLength={50}
             onChange={handleChange} 
             required />
           <input 
@@ -86,8 +86,8 @@ export default function RegisterPage() {
             name="email" 
             placeholder="Email" 
             value={form.email}
-            min={8}
-            max={32}
+            minLength={8}
+            maxLength={32}
             onChange={handleChange} 
             required />
 
@@ -101,8 +101,8 @@ export default function RegisterPage() {
 
           {form.role === 'student' && (
             <>
-              <input name="studentCode" min={8} max={32} placeholder="Mã sinh viên" value={form.studentCode} onChange={handleChange} required />
-              <input name="className" min={8} max={32} placeholder="Lớp" value={form.className} onChange={handleChange} />
+              <input name="studentCode" minLength={8} maxLength={32} placeholder="Mã sinh viên" value={form.studentCode} onChange={handleChange} required />
+              <input name="className" minLength={8} maxLength={32} placeholder="Lớp" value={form.className} onChange={handleChange} />
               <input name="major" required placeholder="Ngành học" value={form.major} onChange={handleChange} />
               <select name="gender" value={form.gender} onChange={handleChange}>
                 <option value="Nam">Nam</option>
@@ -110,7 +110,7 @@ export default function RegisterPage() {
                 <option value="Khác">Khác</option>
               </select>
               <input type="date" required name="dob" value={form.dob} onChange={handleChange} />
-              <input name="phone" min={9} max={12} placeholder="Số điện thoại" value={form.phone} onChange={handleChange} />
+              <input name="phone" minLength={9} maxLength={11} placeholder="Số điện thoại" value={form.phone} onChange={handleChange} />
             </>
           )}
 

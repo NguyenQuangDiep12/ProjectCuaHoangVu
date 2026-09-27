@@ -85,8 +85,8 @@ export default function LoginPage() {
                 placeholder="Nhập username"
                 value={form.username}
                 onChange={handleChange}
-                min={12}
-                max={50}
+                minLength={12}
+                maxLength={50}
                 required
               />
             </div>
@@ -99,8 +99,8 @@ export default function LoginPage() {
                 name="password"
                 placeholder="Nhập password"
                 value={form.password}
-                min={6}
-                max={30}
+                minLength={6}
+                maxLength={30}
                 onChange={handleChange}
                 required
               />
