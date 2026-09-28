@@ -4,5 +4,3 @@ dist/
 build/
 .vite/
 .env
-backend/school.db
-**/school.db

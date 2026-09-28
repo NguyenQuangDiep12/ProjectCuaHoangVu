@@ -526,9 +526,9 @@ async function seedData() {
     studentId: studentTwoId,
     courseId: courseThreeId,
     semester: 'HK1 2026',
-    midterm: 8.5,
-    final: 8.0,
-    total: 8.2,
+    midterm: 8.5, // giua ky
+    final: 8.0, // cuoi ky
+    total: 8.2, // 
     letterGrade: 'B+'
   });
 
