@@ -58,6 +58,8 @@ export default function CourseForm({ currentCourse, onSubmit, onCancel, defaultL
 
         <input
           name="courseName"
+          min="1"
+          max="50"
           placeholder="Tên môn học"
           value={form.courseName}
           onChange={handleChange}
@@ -67,6 +69,7 @@ export default function CourseForm({ currentCourse, onSubmit, onCancel, defaultL
         <input
           type="number"
           min="1"
+          max="10"
           name="credits"
           placeholder="Số tín chỉ"
           value={form.credits}

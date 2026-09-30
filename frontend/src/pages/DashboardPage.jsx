@@ -4,6 +4,7 @@ import CourseForm from '../components/CourseForm';
 import LecturerForm from '../components/LecturerForm';
 import GradeForm from '../components/GradeForm';
 import NavBar from '../components/NavBar';
+import NewsForm, { NEWS_CATEGORIES } from '../components/NewsForm';
 import RoleSidebar from '../components/RoleSidebar';
 import ScheduleForm from '../components/ScheduleForm';
 import SectionForm from '../components/SectionForm';
@@ -26,7 +27,7 @@ const roleSections = {
   ],
   lecturer: [
     { key: 'overview', label: 'Tổng quan', description: 'Xem thống kê học tập' },
-    { key: 'students', label: 'Hồ sơ sinh viên', description: 'Cập nhật hồ sơ học tập' },
+    // { key: 'students', label: 'Hồ sơ sinh viên', description: 'Cập nhật hồ sơ học tập' },
     { key: 'courses', label: 'Môn học', description: 'Tự tạo môn học mới trước khi mở lớp học phần' },
     { key: 'grades', label: 'Nhập điểm', description: 'Nhập và chỉnh sửa điểm số' },
     { key: 'schedules', label: 'Lịch học', description: 'Tạo lịch học cho lớp' },
@@ -38,7 +39,6 @@ const roleSections = {
     { key: 'overview', label: 'Tổng quan', description: 'Thông tin nhanh về học tập' },
     { key: 'profile', label: 'Thông tin cá nhân', description: 'Xem hồ sơ cá nhân' },
     { key: 'grades', label: 'Điểm số', description: 'Xem dashboard bảng điểm và kết quả học tập' },
-    { key: 'gradeExport', label: 'Xuất điểm Excel', description: 'Tải bảng điểm cá nhân ra file Excel để lưu trữ' },
     { key: 'schedule', label: 'Lịch học', description: 'Lịch học tự động hiển thị theo môn đã đăng ký' },
     { key: 'weeklySchedule', label: 'Thời khóa biểu tuần', description: 'Xem thời khóa biểu tuần dạng lưới theo môn đã đăng ký' },
     { key: 'registration', label: 'Đăng ký môn', description: 'Đăng ký hoặc hủy đăng ký lớp học phần' },
@@ -65,6 +65,15 @@ function formatFeedbackStatus(status) {
   };
 
   return map[status] || status;
+}
+
+function normalizeText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
 }
 
 function formatDateTime(value) {
@@ -114,6 +123,9 @@ export default function DashboardPage() {
   const [sectionSearch, setSectionSearch] = useState('');
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [newsSearch, setNewsSearch] = useState('');
+  const [newsCategoryFilter, setNewsCategoryFilter] = useState('all');
+  const [newsStatusFilter, setNewsStatusFilter] = useState('all');
+  const [newsImportantOnly, setNewsImportantOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
   const [feedbackForm, setFeedbackForm] = useState({ subject: '', message: '' });
@@ -268,16 +280,38 @@ export default function DashboardPage() {
   }, [sectionSearch, sectionsList]);
 
 
-  const filteredNews = useMemo(() => {
-    const keyword = newsSearch.trim().toLowerCase();
-    if (!keyword) return newsList;
+  const newsCategories = useMemo(() => {
+    const extra = newsList.map((news) => news.category).filter((c) => c && !NEWS_CATEGORIES.includes(c));
+    return [...NEWS_CATEGORIES, ...new Set(extra)];
+  }, [newsList]);
 
-    return newsList.filter((news) =>
-      [news.title, news.summary, news.content, news.category, news.createdByName]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(keyword))
-    );
-  }, [newsSearch, newsList]);
+  const filteredNews = useMemo(() => {
+    // Tìm không phân biệt hoa thường, không cần gõ dấu, nhiều từ khóa phải cùng khớp
+    const keywords = normalizeText(newsSearch).split(/\s+/).filter(Boolean);
+
+    return newsList.filter((news) => {
+      if (newsCategoryFilter !== 'all' && (news.category || 'Thông báo') !== newsCategoryFilter) return false;
+      if (newsStatusFilter !== 'all' && news.status !== newsStatusFilter) return false;
+      if (newsImportantOnly && Number(news.isImportant) !== 1) return false;
+      if (keywords.length === 0) return true;
+
+      const haystack = normalizeText(
+        [news.title, news.summary, news.content, news.category, news.createdByName, formatDateTime(news.createdAt)]
+          .filter(Boolean)
+          .join(' ')
+      );
+      return keywords.every((word) => haystack.includes(word));
+    });
+  }, [newsSearch, newsCategoryFilter, newsStatusFilter, newsImportantOnly, newsList]);
+
+  const hasNewsFilter = Boolean(newsSearch.trim()) || newsCategoryFilter !== 'all' || newsStatusFilter !== 'all' || newsImportantOnly;
+
+  function resetNewsFilters() {
+    setNewsSearch('');
+    setNewsCategoryFilter('all');
+    setNewsStatusFilter('all');
+    setNewsImportantOnly(false);
+  }
 
   const filteredFeedbacks = useMemo(() => {
     const keyword = feedbackSearch.trim().toLowerCase();
@@ -1955,23 +1989,63 @@ export default function DashboardPage() {
     );
   }
 
+  function renderNewsToolbar(showStatus) {
+    return (
+      <div className="toolbar news-toolbar">
+        <input
+          type="search"
+          placeholder="Tìm theo tiêu đề, nội dung, phân loại, người đăng... (không cần gõ dấu)"
+          value={newsSearch}
+          onChange={(event) => setNewsSearch(event.target.value)}
+        />
+        <select value={newsCategoryFilter} onChange={(event) => setNewsCategoryFilter(event.target.value)}>
+          <option value="all">Tất cả phân loại</option>
+          {newsCategories.map((category) => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+        </select>
+        {showStatus && (
+          <select value={newsStatusFilter} onChange={(event) => setNewsStatusFilter(event.target.value)}>
+            <option value="all">Mọi trạng thái</option>
+            <option value="published">Đang hiển thị</option>
+            <option value="draft">Bản nháp</option>
+          </select>
+        )}
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={newsImportantOnly}
+            onChange={(event) => setNewsImportantOnly(event.target.checked)}
+          />
+          <span>Chỉ tin quan trọng</span>
+        </label>
+        {hasNewsFilter && (
+          <button type="button" className="btn btn-light" onClick={resetNewsFilters}>Xóa bộ lọc</button>
+        )}
+        <small className="news-result-count">
+          {filteredNews.length}/{newsList.length} tin
+        </small>
+      </div>
+    );
+  }
+
   function renderNewsSection() {
     if (isAdmin) {
       return (
         <section className="dashboard-grid two-columns">
+          <NewsForm
+            currentNews={editingNews}
+            onSubmit={handleCreateOrUpdateNews}
+            onCancel={() => setEditingNews(null)}
+          />
+
           <div className="card compact-card wide-card">
             <div className="card-header">
               <h3>Quản lý tin tức</h3>
               <p>Đăng thông báo nghỉ học, lịch học bù hoặc các nội dung học vụ để toàn hệ thống theo dõi.</p>
             </div>
 
-            <div className="toolbar">
-              <input
-                placeholder="Tìm kiếm tin tức..."
-                value={newsSearch}
-                onChange={(event) => setNewsSearch(event.target.value)}
-              />
-            </div>
+            {renderNewsToolbar(true)}
 
             <div className="table-wrapper">
               <table>
@@ -2015,7 +2089,7 @@ export default function DashboardPage() {
                   ))}
                   {filteredNews.length === 0 && (
                     <tr>
-                      <td colSpan="5" className="empty-cell">Chưa có tin tức nào.</td>
+                      <td colSpan="5" className="empty-cell">{hasNewsFilter ? 'Không có tin tức nào khớp bộ lọc.' : 'Chưa có tin tức nào.'}</td>
                     </tr>
                   )}
                 </tbody>
@@ -2033,13 +2107,7 @@ export default function DashboardPage() {
           <p>Các thông báo mới nhất từ admin như nghỉ học, lịch học bù hoặc nội dung học vụ quan trọng.</p>
         </div>
 
-        <div className="toolbar">
-          <input
-            placeholder="Tìm kiếm tin tức..."
-            value={newsSearch}
-            onChange={(event) => setNewsSearch(event.target.value)}
-          />
-        </div>
+        {renderNewsToolbar(false)}
 
         <div className="news-list">
           {filteredNews.map((news) => (
@@ -2065,7 +2133,7 @@ export default function DashboardPage() {
 
           {filteredNews.length === 0 && (
             <div className="card compact-card">
-              <p className="empty-cell">Hiện chưa có tin tức nào để hiển thị.</p>
+              <p className="empty-cell">{hasNewsFilter ? 'Không có tin tức nào khớp bộ lọc.' : 'Hiện chưa có tin tức nào để hiển thị.'}</p>
             </div>
           )}
         </div>
