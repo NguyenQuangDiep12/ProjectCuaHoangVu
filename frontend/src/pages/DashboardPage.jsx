@@ -1887,13 +1887,6 @@ export default function DashboardPage() {
             <p>Admin có thể xem trực tiếp và phản hồi ngay trong hệ thống.</p>
           </div>
 
-          <div className="toolbar">
-            <input
-              placeholder="Tìm kiếm ý kiến sinh viên..."
-              value={feedbackSearch}
-              onChange={(event) => setFeedbackSearch(event.target.value)}
-            />
-          </div>
 
           <div className="table-wrapper">
             <table>
