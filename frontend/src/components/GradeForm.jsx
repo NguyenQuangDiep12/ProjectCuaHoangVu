@@ -9,7 +9,7 @@ const initialForm = {
   notes: ''
 };
 
-export default function GradeForm({ students, courses, currentGrade, onSubmit, onCancel }) {
+export default function GradeForm({ students, courses, currentGrade, initialValues, onSubmit, onCancel }) {
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
@@ -25,12 +25,22 @@ export default function GradeForm({ students, courses, currentGrade, onSubmit, o
       return;
     }
 
+    if (initialValues) {
+      setForm({
+        ...initialForm,
+        studentId: String(initialValues.studentId || ''),
+        courseId: String(initialValues.courseId || ''),
+        semester: initialValues.semester || initialForm.semester
+      });
+      return;
+    }
+
     setForm((prev) => ({
       ...initialForm,
       studentId: students[0] ? String(students[0].id) : '',
       courseId: courses[0] ? String(courses[0].id) : ''
     }));
-  }, [currentGrade, students, courses]);
+  }, [currentGrade, initialValues, students, courses]);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -52,11 +62,11 @@ export default function GradeForm({ students, courses, currentGrade, onSubmit, o
     <div className="card">
       <div className="card-header">
         <h3>{currentGrade ? 'Cập nhật điểm' : 'Nhập điểm sinh viên'}</h3>
-        <p>Chọn sinh viên, môn học và nhập điểm giữa kỳ - cuối kỳ.</p>
+        <p>{initialValues && !currentGrade ? 'Sinh viên, môn học và học kỳ đã được lấy từ lớp học phần. Chỉ cần nhập điểm.' : 'Chọn sinh viên, môn học và nhập điểm giữa kỳ - cuối kỳ.'}</p>
       </div>
 
       <form className="grid-form" onSubmit={handleSubmit}>
-        <select name="studentId" value={form.studentId} onChange={handleChange} required>
+        <select name="studentId" value={form.studentId} onChange={handleChange} required disabled={Boolean(initialValues && !currentGrade)}>
           <option value="">Chọn sinh viên</option>
           {students.map((student) => (
             <option key={student.id} value={student.id}>
@@ -65,7 +75,7 @@ export default function GradeForm({ students, courses, currentGrade, onSubmit, o
           ))}
         </select>
 
-        <select name="courseId" value={form.courseId} onChange={handleChange} required>
+        <select name="courseId" value={form.courseId} onChange={handleChange} required disabled={Boolean(initialValues && !currentGrade)}>
           <option value="">Chọn môn học</option>
           {courses.map((course) => (
             <option key={course.id} value={course.id}>

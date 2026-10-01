@@ -376,6 +376,20 @@ small {
   color: #64748b;
 }
 
+.registration-conflict {
+  display: block;
+  margin-top: 4px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.roster-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .action-buttons {
   display: flex;
   gap: 8px;

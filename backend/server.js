@@ -1289,6 +1289,39 @@ app.delete('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), as
   }
 });
 
+app.get('/api/sections/:id/students', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
+  try {
+    const section = await get('SELECT id, sectionCode FROM sections WHERE id = ?', [req.params.id]);
+    if (!section) {
+      return res.status(404).json({ message: 'Không tìm thấy lớp học phần.' });
+    }
+
+    if (req.user.role === 'lecturer') {
+      const ownedSection = await get(
+        'SELECT id FROM sections WHERE id = ? AND lecturerId = ?',
+        [req.params.id, req.user.id]
+      );
+      if (!ownedSection) {
+        return res.status(403).json({ message: 'Bạn chỉ được xem sinh viên trong lớp học phần do mình tạo.' });
+      }
+    }
+
+    const students = await all(
+      `SELECT s.id, s.studentCode, s.fullName, s.email, e.createdAt AS enrolledAt
+       FROM enrollments e
+       JOIN students s ON s.id = e.studentId
+       WHERE e.sectionId = ?
+       ORDER BY s.studentCode ASC, s.fullName ASC`,
+      [req.params.id]
+    );
+
+    return res.json({ section, students, enrollmentCount: students.length });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Lỗi server khi lấy danh sách sinh viên lớp học phần.' });
+  }
+});
+
 app.get('/api/sections/stats', authMiddleware, requireRoles('admin'), async (req, res) => {
   try {
     const stats = await all(
@@ -1572,28 +1605,55 @@ app.get('/api/feedbacks/me', authMiddleware, requireRoles('student'), async (req
 
 app.post('/api/feedbacks', authMiddleware, requireRoles('student'), async (req, res) => {
   try {
-    const { subject, message } = req.body;
+    const subject = String(req.body.subject || '').trim();
+    const message = String(req.body.message || '').trim();
 
     if (!subject || !message) {
-      return res.status(400).json({ message: 'Vui lòng nhập tiêu đề và nội dung ý kiến.' });
+      return res.status(400).json({
+        message: 'Vui lòng nhập tiêu đề và nội dung ý kiến.'
+      });
+    }
+
+    if (subject.length < 6 || subject.length > 30) {
+      return res.status(400).json({
+        message: 'Tiêu đề ý kiến phải có từ 6 đến 30 ký tự.'
+      });
+    }
+
+    if (message.length < 6 || message.length > 200) {
+      return res.status(400).json({
+        message: 'Nội dung ý kiến phải có từ 6 đến 200 ký tự.'
+      });
     }
 
     const student = await getCurrentStudentByUserId(req.user.id);
+
     if (!student) {
-      return res.status(404).json({ message: 'Không tìm thấy sinh viên.' });
+      return res.status(404).json({
+        message: 'Không tìm thấy sinh viên.'
+      });
     }
 
     const result = await run(
       `INSERT INTO feedbacks (studentId, subject, message)
        VALUES (?, ?, ?)`,
-      [student.id, subject.trim(), message.trim()]
+      [student.id, subject, message]
     );
 
-    const feedback = await get('SELECT * FROM feedbacks WHERE id = ?', [result.id]);
-    return res.status(201).json({ message: 'Gửi ý kiến thành công.', feedback });
+    const feedback = await get(
+      'SELECT * FROM feedbacks WHERE id = ?',
+      [result.id]
+    );
+
+    return res.status(201).json({
+      message: 'Gửi ý kiến thành công.',
+      feedback
+    });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Lỗi server khi gửi ý kiến.' });
+    return res.status(500).json({
+      message: 'Lỗi server khi gửi ý kiến.'
+    });
   }
 });
 

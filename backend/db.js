@@ -207,6 +207,7 @@ async function createTables() {
   `);
 }
 
+
 async function seedUser({ username, password, role, fullName, email, studentCode = null, lecturerCode = null }) {
   const existed = await get('SELECT id FROM users WHERE username = ?', [username]);
   if (existed) {
@@ -604,6 +605,7 @@ async function seedData() {
 
   return { adminId, lecturerId, studentUserId };
 }
+
 
 async function initDatabase() {
   await createTables();
