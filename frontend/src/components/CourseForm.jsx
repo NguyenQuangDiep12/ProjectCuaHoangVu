@@ -34,10 +34,7 @@ export default function CourseForm({ currentCourse, onSubmit, onCancel, defaultL
 
   function handleSubmit(event) {
     event.preventDefault();
-    onSubmit({
-      ...form,
-      credits: Number(form.credits || 0)
-    });
+    onSubmit({ ...form });
   }
 
   return (
@@ -53,28 +50,22 @@ export default function CourseForm({ currentCourse, onSubmit, onCancel, defaultL
           placeholder="Mã môn học, ví dụ INT301"
           value={form.courseCode}
           onChange={handleChange}
-          required
         />
 
         <input
           name="courseName"
-          min="1"
-          max="50"
           placeholder="Tên môn học"
           value={form.courseName}
           onChange={handleChange}
-          required
         />
 
         <input
           type="number"
-          min="1"
-          max="10"
+          step="any"
           name="credits"
           placeholder="Số tín chỉ"
           value={form.credits}
           onChange={handleChange}
-          required
         />
 
         <input

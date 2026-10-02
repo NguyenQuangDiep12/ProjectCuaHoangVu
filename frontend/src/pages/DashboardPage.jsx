@@ -276,7 +276,7 @@ export default function DashboardPage() {
     if (!keyword) return sectionsList;
 
     return sectionsList.filter((section) =>
-      [section.sectionCode, section.courseCode, section.courseName, section.semester, section.room, section.dayOfWeek, section.lecturerName]
+      [section.sectionCode, section.courseCode, section.courseName, section.semester, section.building, section.room, section.dayOfWeek, section.lecturerName]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(keyword))
     );
@@ -1031,7 +1031,7 @@ export default function DashboardPage() {
                         <td>{schedule.courseCode} - {schedule.courseName}</td>
                         <td>{schedule.lecturerName || '--'}</td>
                         <td>{schedule.dayOfWeek}, {schedule.startTime} - {schedule.endTime}</td>
-                        <td>{schedule.room}</td>
+                        <td>{schedule.building} · {schedule.room}</td>
                       </tr>
                     ))}
                     {schedules.length === 0 && (
@@ -1629,7 +1629,7 @@ export default function DashboardPage() {
                     <td>{schedule.className}</td>
                     <td>{schedule.dayOfWeek}</td>
                     <td>{schedule.startTime} - {schedule.endTime}</td>
-                    <td>{schedule.room}</td>
+                    <td>{schedule.building} · {schedule.room}</td>
                     <td>{schedule.semester}</td>
                     {!isStudent && (
                       <td>
@@ -1689,6 +1689,7 @@ export default function DashboardPage() {
                   <th>Mã lớp</th>
                   <th>Môn học</th>
                   <th>Giảng viên</th>
+                  <th>Tòa nhà / phòng</th>
                   <th>Lịch</th>
                   <th>Chỗ trống</th>
                   <th>Trạng thái</th>
@@ -1704,7 +1705,11 @@ export default function DashboardPage() {
                       <small>{section.courseCode} - {section.semester}</small>
                     </td>
                     <td>{section.lecturerName}</td>
-                    <td>{section.dayOfWeek}, {section.startTime} - {section.endTime}</td>
+                    <td>{section.building} · {section.room}</td>
+                    <td>
+                      {section.dayOfWeek}, {section.startTime} - {section.endTime}
+                      <small>Học phần: {section.startDate} – {section.endDate}</small>
+                    </td>
                     <td><strong>{Math.max(0, Number(section.maxStudents) - Number(section.enrollmentCount))}</strong> / {section.maxStudents}<small> đã đăng ký {section.enrollmentCount}</small></td>
                     <td>
                       <span className={`pill ${section.status === 'open' ? 'success' : 'neutral'}`}>
@@ -1728,7 +1733,7 @@ export default function DashboardPage() {
                 ))}
                 {filteredSections.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="empty-cell">Chưa có lớp học phần nào.</td>
+                    <td colSpan="8" className="empty-cell">Chưa có lớp học phần nào.</td>
                   </tr>
                 )}
               </tbody>
@@ -1795,7 +1800,7 @@ export default function DashboardPage() {
                 <th>Mã lớp</th>
                 <th>Môn học</th>
                 <th>Giảng viên</th>
-                <th>Phòng</th>
+                <th>Tòa nhà / phòng</th>
                 <th>Chỗ trống</th>
                 <th>Lịch học</th>
                 <th>Trạng thái</th>
@@ -1807,6 +1812,7 @@ export default function DashboardPage() {
                 const isRegisteredSection = Number(section.isRegistered) === 1;
                 const isFull = Number(section.enrollmentCount) >= Number(section.maxStudents);
                 const isClosed = section.status !== 'open';
+                const registrationStatus = isClosed ? 'Đóng đăng ký' : 'Đang mở';
                 const conflict = !isRegisteredSection && hasScheduleConflict(section, sectionsList.filter((item) => Number(item.isRegistered) === 1));
 
                 return (
@@ -1817,15 +1823,16 @@ export default function DashboardPage() {
                       <small>{section.courseCode} - {section.semester}</small>
                     </td>
                     <td>{section.lecturerName}</td>
-                    <td>{section.room}</td>
+                    <td>{section.building} · {section.room}</td>
                     <td><strong>{Math.max(0, Number(section.maxStudents) - Number(section.enrollmentCount))}</strong> / {section.maxStudents}</td>
                     <td>
                       <div>{section.dayOfWeek}, {section.startTime} - {section.endTime}</div>
+                      <small>Học phần: {section.startDate} – {section.endDate}</small>
                       {conflict && <small className="registration-conflict">Trùng lịch với lớp đã đăng ký</small>}
                     </td>
                     <td>
                       <span className={`pill ${isClosed ? 'neutral' : 'success'}`}>
-                        {isClosed ? 'Đóng đăng ký' : 'Mở đăng ký'}
+                        {registrationStatus}
                       </span>
                     </td>
                     <td>
@@ -1839,7 +1846,7 @@ export default function DashboardPage() {
                           disabled={isClosed || isFull || conflict}
                           onClick={() => handleRegisterSection(section.id)}
                         >
-                          {isFull ? 'Đã đầy' : conflict ? 'Trùng lịch' : 'Đăng ký'}
+                          {isFull ? 'Đã đầy' : conflict ? 'Trùng lịch' : isClosed ? 'Đã đóng' : 'Đăng ký'}
                         </button>
                       )}
                     </td>

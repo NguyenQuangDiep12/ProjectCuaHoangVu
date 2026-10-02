@@ -131,6 +131,7 @@ async function createTables() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       courseId INTEGER NOT NULL,
       className TEXT NOT NULL,
+      building TEXT NOT NULL DEFAULT '',
       room TEXT NOT NULL,
       dayOfWeek TEXT NOT NULL,
       startTime TEXT NOT NULL,
@@ -150,6 +151,7 @@ async function createTables() {
       courseId INTEGER NOT NULL,
       sectionCode TEXT NOT NULL UNIQUE,
       lecturerId INTEGER NOT NULL,
+      building TEXT NOT NULL DEFAULT '',
       room TEXT NOT NULL,
       dayOfWeek TEXT NOT NULL,
       startTime TEXT NOT NULL,
@@ -163,6 +165,35 @@ async function createTables() {
       FOREIGN KEY(lecturerId) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+  await ensureColumn('schedules', 'building', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn('courses', 'ownerUserId', 'INTEGER');
+  await run(`UPDATE courses
+    SET ownerUserId = (
+      SELECT MIN(u.id) FROM users u
+      WHERE u.role = 'lecturer' AND u.fullName = courses.lecturerName
+      HAVING COUNT(*) = 1
+    )
+    WHERE ownerUserId IS NULL`);
+  await run(`CREATE TABLE IF NOT EXISTS student_code_sequence (id INTEGER PRIMARY KEY CHECK(id = 1), lastValue INTEGER NOT NULL)`);
+  await run('INSERT OR IGNORE INTO student_code_sequence (id, lastValue) VALUES (1, 0)');
+  await run(`UPDATE student_code_sequence
+    SET lastValue = MAX(lastValue, COALESCE((SELECT MAX(CAST(SUBSTR(studentCode, 4) AS INTEGER)) FROM students WHERE studentCode GLOB '222[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'), 0))
+    WHERE id = 1`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS grade_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      gradeId INTEGER NOT NULL,
+      actorUserId INTEGER,
+      action TEXT NOT NULL CHECK(action IN ('created', 'updated', 'deleted')),
+      beforeData TEXT NOT NULL,
+      afterData TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await ensureColumn('sections', 'building', "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn('sections', 'startDate', 'TEXT');
+  await ensureColumn('sections', 'endDate', 'TEXT');
 
   await run(`
     CREATE TABLE IF NOT EXISTS enrollments (
@@ -174,6 +205,34 @@ async function createTables() {
       FOREIGN KEY(sectionId) REFERENCES sections(id) ON DELETE CASCADE,
       FOREIGN KEY(studentId) REFERENCES students(id) ON DELETE CASCADE
     )
+  `);
+  await run(`
+    CREATE TRIGGER IF NOT EXISTS prevent_student_section_conflict
+    BEFORE INSERT ON enrollments
+    WHEN EXISTS (
+      SELECT 1
+      FROM enrollments existing
+      JOIN sections oldSection ON oldSection.id = existing.sectionId
+      JOIN sections newSection ON newSection.id = NEW.sectionId
+      WHERE existing.studentId = NEW.studentId
+        AND (
+          (oldSection.courseId = newSection.courseId AND oldSection.semester = newSection.semester)
+          OR (
+            oldSection.dayOfWeek = newSection.dayOfWeek
+            AND oldSection.startTime < newSection.endTime
+            AND newSection.startTime < oldSection.endTime
+            AND CASE
+              WHEN oldSection.startDate IS NOT NULL AND oldSection.endDate IS NOT NULL
+               AND newSection.startDate IS NOT NULL AND newSection.endDate IS NOT NULL
+              THEN oldSection.startDate <= newSection.endDate AND newSection.startDate <= oldSection.endDate
+              ELSE oldSection.semester = newSection.semester
+            END
+          )
+        )
+    )
+    BEGIN
+      SELECT RAISE(ABORT, 'ENROLLMENT_CONFLICT');
+    END
   `);
 
   await run(`

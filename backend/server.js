@@ -21,6 +21,7 @@ app.use(express.json());
 
 const ROLE_STAFF = ['admin', 'lecturer'];
 const WEEKDAY_ORDER = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+const BUILDINGS = ['Khu A', 'Khu B', 'A1', 'Khu C'];
 
 
 function timeToMinutes(time) {
@@ -43,6 +44,7 @@ async function findScheduleConflict({
   startTime,
   endTime,
   className,
+  building,
   room,
   createdBy = null,
   excludeId = null
@@ -60,7 +62,8 @@ async function findScheduleConflict({
     if (!overlap) return false;
 
     const sameClass = String(row.className || '').trim().toLowerCase() === String(className || '').trim().toLowerCase();
-    const sameRoom = String(row.room || '').trim().toLowerCase() === String(room || '').trim().toLowerCase();
+    const sameRoom = String(row.room || '').trim().toLowerCase() === String(room || '').trim().toLowerCase()
+      && (!row.building || !building || String(row.building).trim().toLocaleLowerCase('vi') === String(building).trim().toLocaleLowerCase('vi'));
     const sameLecturer = createdBy && Number(row.createdBy) === Number(createdBy);
 
     if (sameClass) {
@@ -92,6 +95,7 @@ function buildConflictMessage(conflictRow, dayOfWeek) {
 
   const conflictParts = [];
   if (conflictRow.className) conflictParts.push(`lớp ${conflictRow.className}`);
+  if (conflictRow.building) conflictParts.push(`tòa ${conflictRow.building}`);
   if (conflictRow.room) conflictParts.push(`phòng ${conflictRow.room}`);
   const detail = conflictParts.length ? ` (${conflictParts.join(', ')})` : '';
   return `Trùng giờ học vào ${dayOfWeek}${detail}. Vui lòng chọn thời gian khác.`;
@@ -128,6 +132,157 @@ function getLetterGrade(total) {
 
 function calculateTotal(midterm, final) {
   return roundScore(Number(midterm || 0) * 0.4 + Number(final || 0) * 0.6);
+}
+function validateSectionDates({ startDate, endDate }) {
+    const dates = [startDate, endDate];
+    if (
+        dates.some((date) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) return true;
+            const parsed = new Date(`${date}T00:00:00Z`);
+            return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date;
+        })
+    )
+        return "Vui lòng nhập đủ ngày bắt đầu và ngày kết thúc học phần hợp lệ.";
+    if (startDate > endDate) return "Ngày bắt đầu học phần phải trước hoặc bằng ngày kết thúc học phần.";
+    return "";
+}
+
+function isRegistrationOpen(section) {
+    return section.status === "open";
+}
+
+async function findSectionConflict({
+    building,
+    room,
+    dayOfWeek,
+    startTime,
+    endTime,
+    startDate,
+    endDate,
+    semester,
+    lecturerId,
+    excludeId = null,
+}) {
+    const candidates = await all(
+        `SELECT se.*, c.courseCode, c.courseName
+     FROM sections se JOIN courses c ON c.id = se.courseId
+     WHERE se.dayOfWeek = ? AND (? IS NULL OR se.id != ?)`,
+        [dayOfWeek, excludeId, excludeId]
+    );
+    const normalize = (value) =>
+        String(value || "")
+            .trim()
+            .toLocaleLowerCase("vi");
+    return (
+        candidates.find((section) => {
+            const datesOverlap =
+                section.startDate && section.endDate
+                    ? section.startDate <= endDate && startDate <= section.endDate
+                    : section.semester === semester;
+            if (!datesOverlap || !hasTimeOverlap(startTime, endTime, section.startTime, section.endTime)) return false;
+            const sameRoom =
+                normalize(section.building) === normalize(building) && normalize(section.room) === normalize(room);
+            const sameLecturer = Number(section.lecturerId) === Number(lecturerId);
+            if (!sameRoom && !sameLecturer) return false;
+            section.conflictType = sameRoom ? "room" : "lecturer";
+            return true;
+        }) || null
+    );
+}
+
+async function findStudentSectionConflict(studentId, candidate) {
+    const registered = await all(
+        `SELECT se.* FROM enrollments en JOIN sections se ON se.id = en.sectionId
+     WHERE en.studentId = ?`,
+        [studentId]
+    );
+    return (
+        registered.find((section) => {
+            if (
+                section.dayOfWeek !== candidate.dayOfWeek ||
+                !hasTimeOverlap(candidate.startTime, candidate.endTime, section.startTime, section.endTime)
+            )
+                return false;
+            if (section.startDate && section.endDate && candidate.startDate && candidate.endDate) {
+                return section.startDate <= candidate.endDate && candidate.startDate <= section.endDate;
+            }
+            return section.semester === candidate.semester;
+        }) || null
+    );
+}
+
+async function findScheduleSectionConflict({ building, room, dayOfWeek, startTime, endTime, semester, lecturerId }) {
+    const sections = await all(
+        "SELECT se.*, c.courseCode, c.courseName FROM sections se JOIN courses c ON c.id = se.courseId WHERE se.dayOfWeek = ?",
+        [dayOfWeek]
+    );
+    const normalize = (value) =>
+        String(value || "")
+            .trim()
+            .toLocaleLowerCase("vi");
+    return (
+        sections.find((section) => {
+            const samePeriod = section.semester === semester;
+            const sameRoom =
+                normalize(section.room) === normalize(room) &&
+                (!section.building || !building || normalize(section.building) === normalize(building));
+            const sameLecturer = Number(section.lecturerId) === Number(lecturerId);
+            return (
+                samePeriod &&
+                hasTimeOverlap(startTime, endTime, section.startTime, section.endTime) &&
+                (sameRoom || sameLecturer)
+            );
+        }) || null
+    );
+}
+
+function buildSectionConflictMessage(conflict, dayOfWeek) {
+    const reason =
+        conflict.conflictType === "room"
+            ? `tòa ${conflict.building}, phòng ${conflict.room}`
+            : `lịch giảng của giảng viên với môn ${conflict.courseName} (${conflict.courseCode})`;
+    return `Trùng ${reason} vào ${dayOfWeek}, ${conflict.startTime}–${conflict.endTime} trong thời gian học phần giao nhau. Vui lòng đổi tòa/phòng, ngày hoặc giờ.`;
+}
+
+function validateRegistration(body, role) {
+    const clean = (value) => String(value ?? "").trim();
+    const errors = [];
+    const username = clean(body.username);
+    const password = String(body.password ?? "");
+    const fullName = clean(body.fullName);
+    const email = clean(body.email).toLowerCase();
+    const phone = clean(body.phone);
+    const dob = clean(body.dob);
+    if (!/^[A-Za-z0-9_.-]{6,30}$/.test(username))
+        errors.push("Username phải dài 6-30 ký tự, chỉ gồm chữ, số, dấu ., _ hoặc -.");
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{10,64}$/.test(password))
+        errors.push("Mật khẩu cần 10-64 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt.");
+    if (fullName.length < 2 || fullName.length > 80 || /[^\p{L}\p{M}\s'.-]/u.test(fullName))
+        errors.push("Họ tên phải có 2-80 ký tự và chỉ gồm chữ, khoảng trắng, dấu nháy hoặc gạch nối.");
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errors.push("Email không hợp lệ.");
+    if (role !== "student") errors.push("Chỉ sinh viên được tự đăng ký; tài khoản giảng viên do quản trị viên tạo.");
+    if (role === "student" && (!clean(body.className) || clean(body.className).length > 30))
+        errors.push("Lớp học bắt buộc, tối đa 30 ký tự.");
+    if (role === "student" && (!clean(body.major) || clean(body.major).length < 2 || clean(body.major).length > 80))
+        errors.push("Ngành học bắt buộc, dài 2-80 ký tự.");
+    if (!["Nam", "Nữ", "Khác"].includes(body.gender)) errors.push("Vui lòng chọn giới tính hợp lệ.");
+    const parsedDob = new Date(`${dob}T00:00:00Z`);
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(dob) ||
+        Number.isNaN(parsedDob.getTime()) ||
+        parsedDob.toISOString().slice(0, 10) !== dob ||
+        parsedDob >= new Date()
+    )
+        errors.push("Ngày sinh không hợp lệ hoặc phải nằm trong quá khứ.");
+    if (!/^\+?[0-9]{9,10}$/.test(phone)) errors.push("Số điện thoại phải gồm 9-10 chữ số (có thể bắt đầu bằng +).");
+    return { errors, username, fullName, email, phone, dob };
+}
+
+
+async function generateNextStudentCode() {
+  const sequence = await get('UPDATE student_code_sequence SET lastValue = lastValue + 1 WHERE id = 1 RETURNING lastValue');
+  if (!sequence || sequence.lastValue > 9999999) throw new Error('Đã hết dải mã sinh viên 222xxxxxxx.');
+  return `222${String(sequence.lastValue).padStart(7, '0')}`;
 }
 
 async function getCurrentStudentByUserId(userId) {
@@ -178,7 +333,7 @@ app.post('/api/auth/register', async (req, res) => {
       role,
       fullName,
       email,
-      studentCode,
+      studentCode: requestedStudentCode,
       lecturerCode,
       className,
       major,
@@ -189,21 +344,14 @@ app.post('/api/auth/register', async (req, res) => {
       phone
     } = req.body;
 
-    if (!username || !password || !role || !fullName || !email) {
-      return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin bắt buộc.' });
-    }
-
-    if (!['lecturer', 'student'].includes(role)) {
-      return res.status(400).json({ message: 'Chỉ được đăng ký tài khoản lecturer hoặc student.' });
-    }
-
-    if (role === 'student' && !studentCode) {
-      return res.status(400).json({ message: 'Sinh viên phải có mã sinh viên.' });
-    }
+    const checked = validateRegistration(req.body, role);
+    if (checked.errors.length) return res.status(400).json({ message: checked.errors.join(' ') });
+    const { username: cleanUsername, fullName: cleanFullName, email: cleanEmail, phone: cleanPhone, dob: cleanDob } = checked;
+    const studentCode = role === 'student' ? await generateNextStudentCode() : null;
 
     const existedUser = await get(
       'SELECT id FROM users WHERE username = ? OR email = ?',
-      [username, email]
+      [cleanUsername, cleanEmail]
     );
 
     if (existedUser) {
@@ -240,12 +388,12 @@ app.post('/api/auth/register', async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const createdUser = await run(
       `INSERT INTO users (username, password, role, fullName, email, studentCode, lecturerCode)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [username, hashedPassword, role, fullName, email, role === 'student' ? studentCode : null, role === 'lecturer' ? finalLecturerCode : null]
+      [cleanUsername, hashedPassword, role, cleanFullName, cleanEmail, role === 'student' ? studentCode : null, role === 'lecturer' ? finalLecturerCode : null]
     );
 
     if (role === 'student') {
@@ -254,13 +402,13 @@ app.post('/api/auth/register', async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           studentCode,
-          fullName,
-          email,
+          cleanFullName,
+          cleanEmail,
           className || '',
           major || '',
           gender || '',
-          dob || '',
-          phone || '',
+          cleanDob,
+          cleanPhone,
           createdUser.id
         ]
       );
@@ -272,19 +420,19 @@ app.post('/api/auth/register', async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           finalLecturerCode,
-          fullName,
-          email,
+          cleanFullName,
+          cleanEmail,
           department || '',
           degree || '',
           gender || '',
-          dob || '',
-          phone || '',
+          cleanDob,
+          cleanPhone,
           createdUser.id
         ]
       );
     }
 
-    return res.status(201).json({ message: 'Đăng ký tài khoản thành công.' });
+    return res.status(201).json({ message: 'Đăng ký tài khoản thành công.', studentCode });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: 'Lỗi server khi đăng ký.' });
@@ -754,7 +902,9 @@ app.get('/api/stats', authMiddleware, requireRoles(...ROLE_STAFF), async (req, r
 
 app.get('/api/courses', authMiddleware, async (req, res) => {
   try {
-    const courses = await all('SELECT * FROM courses ORDER BY courseCode ASC');
+    const courses = req.user.role === 'lecturer'
+      ? await all('SELECT * FROM courses WHERE ownerUserId = ? ORDER BY courseCode ASC', [req.user.id])
+      : await all('SELECT * FROM courses ORDER BY courseCode ASC');
     return res.json(courses);
   } catch (error) {
     console.error(error);
@@ -765,12 +915,15 @@ app.get('/api/courses', authMiddleware, async (req, res) => {
 app.post('/api/courses', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { courseCode, courseName, credits, lecturerName } = req.body;
+    const normalizedCode = String(courseCode || '').trim();
+    const normalizedName = String(courseName || '').trim();
+    const creditText = String(credits ?? '');
+    const creditCount = Number(creditText);
+    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedCode)) return res.status(400).json({ message: 'Mã môn học phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.' });
+    if (normalizedName.length < 12 || normalizedName.length > 50) return res.status(400).json({ message: 'Tên môn học phải từ 12–50 ký tự.' });
+    if (!/^\d+$/.test(creditText) || !Number.isInteger(creditCount) || creditCount < 1 || creditCount > 10) return res.status(400).json({ message: 'Số tín chỉ phải là số nguyên từ 1 đến 10.' });
 
-    if (!courseCode || !courseName) {
-      return res.status(400).json({ message: 'Vui lòng nhập mã môn và tên môn học.' });
-    }
-
-    const existed = await get('SELECT id FROM courses WHERE courseCode = ?', [courseCode]);
+    const existed = await get('SELECT id FROM courses WHERE LOWER(courseCode) = LOWER(?)', [normalizedCode]);
     if (existed) {
       return res.status(400).json({ message: 'Mã môn học đã tồn tại.' });
     }
@@ -778,9 +931,9 @@ app.post('/api/courses', authMiddleware, requireRoles(...ROLE_STAFF), async (req
     const normalizedLecturerName = await getCurrentLecturerName(req, lecturerName);
 
     const result = await run(
-      `INSERT INTO courses (courseCode, courseName, credits, lecturerName)
-       VALUES (?, ?, ?, ?)`,
-      [courseCode.trim(), courseName.trim(), Number(credits || 3), normalizedLecturerName]
+      `INSERT INTO courses (courseCode, courseName, credits, lecturerName, ownerUserId)
+       VALUES (?, ?, ?, ?, ?)`,
+      [normalizedCode, normalizedName, creditCount, normalizedLecturerName, req.user.role === 'lecturer' ? req.user.id : null]
     );
 
     const course = await get('SELECT * FROM courses WHERE id = ?', [result.id]);
@@ -795,17 +948,21 @@ app.put('/api/courses/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (
   try {
     const { id } = req.params;
     const { courseCode, courseName, credits, lecturerName } = req.body;
-
-    if (!courseCode || !courseName) {
-      return res.status(400).json({ message: 'Vui lòng nhập mã môn và tên môn học.' });
-    }
-
     const current = await get('SELECT * FROM courses WHERE id = ?', [id]);
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy môn học.' });
     }
 
-    const duplicate = await get('SELECT id FROM courses WHERE courseCode = ? AND id != ?', [courseCode, id]);
+    const normalizedCode = String(courseCode || '').trim();
+    const normalizedName = String(courseName || '').trim();
+    const creditText = String(credits ?? '');
+    const creditCount = Number(creditText);
+    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedCode)) return res.status(400).json({ message: 'Mã môn học phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.' });
+    if (normalizedName.length < 12 || normalizedName.length > 50) return res.status(400).json({ message: 'Tên môn học phải từ 12–50 ký tự.' });
+    if (!/^\d+$/.test(creditText) || !Number.isInteger(creditCount) || creditCount < 1 || creditCount > 10) return res.status(400).json({ message: 'Số tín chỉ phải là số nguyên từ 1 đến 10.' });
+    if (req.user.role === 'lecturer' && Number(current.ownerUserId) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được sửa môn học do mình tạo.' });
+
+    const duplicate = await get('SELECT id FROM courses WHERE LOWER(courseCode) = LOWER(?) AND id != ?', [normalizedCode, id]);
     if (duplicate) {
       return res.status(400).json({ message: 'Mã môn học đã tồn tại ở môn khác.' });
     }
@@ -816,7 +973,7 @@ app.put('/api/courses/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (
       `UPDATE courses
        SET courseCode = ?, courseName = ?, credits = ?, lecturerName = ?
        WHERE id = ?`,
-      [courseCode.trim(), courseName.trim(), Number(credits || 3), normalizedLecturerName, id]
+      [normalizedCode, normalizedName, creditCount, normalizedLecturerName, id]
     );
 
     const updatedCourse = await get('SELECT * FROM courses WHERE id = ?', [id]);
@@ -834,6 +991,8 @@ app.delete('/api/courses/:id', authMiddleware, requireRoles(...ROLE_STAFF), asyn
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy môn học.' });
     }
+
+    if (req.user.role === 'lecturer' && Number(current.ownerUserId) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được xóa môn học do mình tạo.' });
 
     const relatedSection = await get('SELECT id FROM sections WHERE courseId = ? LIMIT 1', [id]);
     const relatedGrade = await get('SELECT id FROM grades WHERE courseId = ? LIMIT 1', [id]);
@@ -958,6 +1117,13 @@ app.delete('/api/students/:id', authMiddleware, requireRoles('admin'), async (re
       return res.status(404).json({ message: 'Không tìm thấy sinh viên.' });
     }
 
+    const [enrollment, grade, feedback] = await Promise.all([
+      get('SELECT id FROM enrollments WHERE studentId = ? LIMIT 1', [id]),
+      get('SELECT id FROM grades WHERE studentId = ? LIMIT 1', [id]),
+      get('SELECT id FROM feedbacks WHERE studentId = ? LIMIT 1', [id])
+    ]);
+    if (enrollment || grade || feedback) return res.status(400).json({ message: 'Không thể xóa sinh viên đã có đăng ký, điểm hoặc ý kiến để bảo toàn lịch sử học vụ.' });
+
     if (student.userId) {
       await run('DELETE FROM users WHERE id = ?', [student.userId]);
     }
@@ -978,7 +1144,12 @@ app.get('/api/grades', authMiddleware, requireRoles(...ROLE_STAFF), async (req, 
        FROM grades g
        JOIN students s ON s.id = g.studentId
        JOIN courses c ON c.id = g.courseId
+       WHERE (? != 'lecturer' OR EXISTS (
+         SELECT 1 FROM enrollments en JOIN sections se ON se.id = en.sectionId
+         WHERE en.studentId = g.studentId AND se.courseId = g.courseId AND se.semester = g.semester AND se.lecturerId = ?
+       ))
        ORDER BY g.semester DESC, s.studentCode ASC, c.courseCode ASC`
+      , [req.user.role, req.user.id]
     );
 
     return res.json(grades);
@@ -1018,6 +1189,12 @@ app.post('/api/grades', authMiddleware, requireRoles(...ROLE_STAFF), async (req,
     if (!studentId || !courseId || !semester) {
       return res.status(400).json({ message: 'Vui lòng chọn sinh viên, môn học và học kỳ.' });
     }
+    if (![midterm, final].every((score) => Number.isFinite(Number(score)) && Number(score) >= 0 && Number(score) <= 10)) {
+      return res.status(400).json({ message: 'Điểm giữa kỳ và cuối kỳ phải là số từ 0 đến 10.' });
+    }
+    const enrolled = await get(`SELECT en.id FROM enrollments en JOIN sections se ON se.id = en.sectionId
+      WHERE en.studentId = ? AND se.courseId = ? AND se.semester = ? AND (? != 'lecturer' OR se.lecturerId = ?) LIMIT 1`, [studentId, courseId, String(semester).trim(), req.user.role, req.user.id]);
+    if (!enrolled) return res.status(400).json({ message: 'Chỉ được chấm điểm sinh viên đã đăng ký lớp học phần của môn và học kỳ này.' });
 
     const duplicate = await get(
       'SELECT id FROM grades WHERE studentId = ? AND courseId = ? AND semester = ?',
@@ -1038,6 +1215,7 @@ app.post('/api/grades', authMiddleware, requireRoles(...ROLE_STAFF), async (req,
     );
 
     const created = await get('SELECT * FROM grades WHERE id = ?', [result.id]);
+    await run('INSERT INTO grade_audit (gradeId, actorUserId, action, beforeData, afterData) VALUES (?, ?, \'created\', ?, ?)', [result.id, req.user.id, '{}', JSON.stringify(created)]);
     return res.status(201).json({ message: 'Nhập điểm thành công.', grade: created });
   } catch (error) {
     console.error(error);
@@ -1054,6 +1232,19 @@ app.put('/api/grades/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (r
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy bản ghi điểm.' });
     }
+
+    if (req.user.role === 'lecturer') {
+      const ownedCurrent = await get(`SELECT id FROM enrollments en JOIN sections se ON se.id = en.sectionId
+        WHERE en.studentId = ? AND se.courseId = ? AND se.semester = ? AND se.lecturerId = ? LIMIT 1`, [current.studentId, current.courseId, current.semester, req.user.id]);
+      if (!ownedCurrent) return res.status(403).json({ message: 'Bạn chỉ được sửa điểm thuộc lớp học phần do mình phụ trách.' });
+    }
+
+    if (!studentId || !courseId || !String(semester || '').trim() || ![midterm, final].every((score) => Number.isFinite(Number(score)) && Number(score) >= 0 && Number(score) <= 10)) {
+      return res.status(400).json({ message: 'Sinh viên, môn học, học kỳ bắt buộc; điểm phải là số từ 0 đến 10.' });
+    }
+    const enrolled = await get(`SELECT en.id FROM enrollments en JOIN sections se ON se.id = en.sectionId
+      WHERE en.studentId = ? AND se.courseId = ? AND se.semester = ? AND (? != 'lecturer' OR se.lecturerId = ?) LIMIT 1`, [studentId, courseId, String(semester).trim(), req.user.role, req.user.id]);
+    if (!enrolled) return res.status(400).json({ message: 'Sinh viên chưa đăng ký lớp học phần tương ứng.' });
 
     const duplicate = await get(
       'SELECT id FROM grades WHERE studentId = ? AND courseId = ? AND semester = ? AND id != ?',
@@ -1075,6 +1266,7 @@ app.put('/api/grades/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (r
     );
 
     const updated = await get('SELECT * FROM grades WHERE id = ?', [id]);
+    await run('INSERT INTO grade_audit (gradeId, actorUserId, action, beforeData, afterData) VALUES (?, ?, \'updated\', ?, ?)', [id, req.user.id, JSON.stringify(current), JSON.stringify(updated)]);
     return res.json({ message: 'Cập nhật điểm thành công.', grade: updated });
   } catch (error) {
     console.error(error);
@@ -1085,10 +1277,18 @@ app.put('/api/grades/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (r
 app.delete('/api/grades/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { id } = req.params;
-    const current = await get('SELECT id FROM grades WHERE id = ?', [id]);
+    const current = await get('SELECT * FROM grades WHERE id = ?', [id]);
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy bản ghi điểm.' });
     }
+
+    if (req.user.role === 'lecturer') {
+      const owned = await get(`SELECT id FROM enrollments en JOIN sections se ON se.id = en.sectionId
+        WHERE en.studentId = ? AND se.courseId = ? AND se.semester = ? AND se.lecturerId = ? LIMIT 1`, [current.studentId, current.courseId, current.semester, req.user.id]);
+      if (!owned) return res.status(403).json({ message: 'Bạn chỉ được xóa điểm thuộc lớp học phần do mình phụ trách.' });
+    }
+
+    await run('INSERT INTO grade_audit (gradeId, actorUserId, action, beforeData) VALUES (?, ?, \'deleted\', ?)', [id, req.user.id, JSON.stringify(current)]);
 
     await run('DELETE FROM grades WHERE id = ?', [id]);
     return res.json({ message: 'Xóa điểm thành công.' });
@@ -1101,9 +1301,10 @@ app.delete('/api/grades/:id', authMiddleware, requireRoles(...ROLE_STAFF), async
 app.get('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const schedules = await all(
-      `SELECT sc.*, c.courseCode, c.courseName, c.credits, c.lecturerName
+       `SELECT sc.*, c.courseCode, c.courseName, c.credits, c.lecturerName
        FROM schedules sc
        JOIN courses c ON c.id = sc.courseId
+       ${req.user.role === 'lecturer' ? 'WHERE sc.createdBy = ?' : ''}
        ORDER BY sc.semester DESC, CASE sc.dayOfWeek
          WHEN 'Thứ 2' THEN 1
          WHEN 'Thứ 3' THEN 2
@@ -1112,7 +1313,8 @@ app.get('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (re
          WHEN 'Thứ 6' THEN 5
          WHEN 'Thứ 7' THEN 6
          ELSE 7
-       END, sc.startTime ASC`
+       END, sc.startTime ASC`,
+      req.user.role === 'lecturer' ? [req.user.id] : []
     );
 
     return res.json(schedules);
@@ -1130,7 +1332,7 @@ app.get('/api/schedules/me', authMiddleware, requireRoles('student'), async (req
     }
 
     const schedules = await all(
-      `SELECT se.id, se.courseId, se.sectionCode AS className, se.room, se.dayOfWeek, se.startTime, se.endTime, se.semester,
+      `SELECT se.id, se.courseId, se.sectionCode AS className, se.building, se.room, se.dayOfWeek, se.startTime, se.endTime, se.semester,
               c.courseCode, c.courseName, c.credits, u.fullName AS lecturerName
        FROM enrollments en
        JOIN sections se ON se.id = en.sectionId
@@ -1158,11 +1360,14 @@ app.get('/api/schedules/me', authMiddleware, requireRoles('student'), async (req
 
 app.post('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
-    const { courseId, className, room, dayOfWeek, daysOfWeek, startTime, endTime, semester } = req.body;
+    const { courseId, className, building, room, dayOfWeek, daysOfWeek, startTime, endTime, semester } = req.body;
 
-    if (!courseId || !className || !room || (!dayOfWeek && !(Array.isArray(daysOfWeek) && daysOfWeek.length)) || !startTime || !endTime || !semester) {
+    if (!courseId || !className || !BUILDINGS.includes(building) || !room || (!dayOfWeek && !(Array.isArray(daysOfWeek) && daysOfWeek.length)) || !startTime || !endTime || !semester) {
       return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin lịch học.' });
     }
+    const courseOwner = await get('SELECT ownerUserId FROM courses WHERE id = ?', [courseId]);
+    if (!courseOwner) return res.status(400).json({ message: 'Môn học không tồn tại.' });
+    if (req.user.role === 'lecturer' && Number(courseOwner.ownerUserId) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được tạo lịch cho môn học do mình tạo.' });
 
     if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
       return res.status(400).json({ message: 'Giờ kết thúc phải lớn hơn giờ bắt đầu.' });
@@ -1180,6 +1385,7 @@ app.post('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (r
         startTime,
         endTime,
         className,
+        building,
         room,
         createdBy: req.user.id
       });
@@ -1187,14 +1393,16 @@ app.post('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (r
       if (conflict) {
         return res.status(400).json({ message: buildConflictMessage(conflict, day) });
       }
+      const sectionConflict = await findScheduleSectionConflict({ building, room, dayOfWeek: day, startTime, endTime, semester, lecturerId: req.user.id });
+      if (sectionConflict) return res.status(400).json({ message: buildSectionConflictMessage(sectionConflict, day) });
     }
 
     const createdSchedules = [];
     for (const day of validDays) {
       const result = await run(
-        `INSERT INTO schedules (courseId, className, room, dayOfWeek, startTime, endTime, semester, createdBy)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [courseId, className, room, day, startTime, endTime, semester, req.user.id]
+        `INSERT INTO schedules (courseId, className, building, room, dayOfWeek, startTime, endTime, semester, createdBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [courseId, className, building, room, day, startTime, endTime, semester, req.user.id]
       );
 
       const created = await get(
@@ -1222,16 +1430,21 @@ app.post('/api/schedules', authMiddleware, requireRoles(...ROLE_STAFF), async (r
 app.put('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { id } = req.params;
-    const { courseId, className, room, dayOfWeek, startTime, endTime, semester } = req.body;
+    const { courseId, className, building, room, dayOfWeek, startTime, endTime, semester } = req.body;
 
     const current = await get('SELECT * FROM schedules WHERE id = ?', [id]);
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy lịch học.' });
     }
+    if (req.user.role === 'lecturer' && Number(current.createdBy) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được sửa lịch học do mình tạo.' });
+    const courseOwner = await get('SELECT ownerUserId FROM courses WHERE id = ?', [courseId]);
+    if (!courseOwner) return res.status(400).json({ message: 'Môn học không tồn tại.' });
+    if (req.user.role === 'lecturer' && Number(courseOwner.ownerUserId) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được xếp lịch cho môn học do mình tạo.' });
 
     if (!WEEKDAY_ORDER.includes(dayOfWeek)) {
       return res.status(400).json({ message: 'Ngày học không hợp lệ.' });
     }
+    if (!BUILDINGS.includes(building) || !String(room || '').trim()) return res.status(400).json({ message: 'Vui lòng chọn tòa nhà và nhập phòng hợp lệ.' });
 
     if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
       return res.status(400).json({ message: 'Giờ kết thúc phải lớn hơn giờ bắt đầu.' });
@@ -1243,6 +1456,7 @@ app.put('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), async
       startTime,
       endTime,
       className,
+      building,
       room,
       createdBy: current.createdBy || req.user.id,
       excludeId: id
@@ -1251,12 +1465,14 @@ app.put('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), async
     if (conflict) {
       return res.status(400).json({ message: buildConflictMessage(conflict, dayOfWeek) });
     }
+    const sectionConflict = await findScheduleSectionConflict({ building, room, dayOfWeek, startTime, endTime, semester, lecturerId: current.createdBy || req.user.id });
+    if (sectionConflict) return res.status(400).json({ message: buildSectionConflictMessage(sectionConflict, dayOfWeek) });
 
     await run(
       `UPDATE schedules
-       SET courseId = ?, className = ?, room = ?, dayOfWeek = ?, startTime = ?, endTime = ?, semester = ?, updatedAt = CURRENT_TIMESTAMP
+       SET courseId = ?, className = ?, building = ?, room = ?, dayOfWeek = ?, startTime = ?, endTime = ?, semester = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [courseId, className, room, dayOfWeek, startTime, endTime, semester, id]
+      [courseId, className, building, room, dayOfWeek, startTime, endTime, semester, id]
     );
 
     const updated = await get(
@@ -1276,10 +1492,11 @@ app.put('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), async
 app.delete('/api/schedules/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { id } = req.params;
-    const current = await get('SELECT id FROM schedules WHERE id = ?', [id]);
+    const current = await get('SELECT * FROM schedules WHERE id = ?', [id]);
     if (!current) {
       return res.status(404).json({ message: 'Không tìm thấy lịch học.' });
     }
+    if (req.user.role === 'lecturer' && Number(current.createdBy) !== Number(req.user.id)) return res.status(403).json({ message: 'Bạn chỉ được xóa lịch học do mình tạo.' });
 
     await run('DELETE FROM schedules WHERE id = ?', [id]);
     return res.json({ message: 'Xóa lịch học thành công.' });
@@ -1295,7 +1512,6 @@ app.get('/api/sections/:id/students', authMiddleware, requireRoles(...ROLE_STAFF
     if (!section) {
       return res.status(404).json({ message: 'Không tìm thấy lớp học phần.' });
     }
-
     if (req.user.role === 'lecturer') {
       const ownedSection = await get(
         'SELECT id FROM sections WHERE id = ? AND lecturerId = ?',
@@ -1427,21 +1643,73 @@ app.get('/api/sections/my', authMiddleware, requireRoles('student'), async (req,
 
 app.post('/api/sections', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
-    const { courseId, sectionCode, room, dayOfWeek, startTime, endTime, semester, maxStudents, status } = req.body;
+    const { courseId, sectionCode, building, room, dayOfWeek, startTime, endTime, semester, maxStudents, status, startDate, endDate } = req.body;
+    const normalizedSectionCode = String(sectionCode || '').trim();
+    const studentCapacity = Number(maxStudents ?? 50);
 
-    if (!courseId || !sectionCode || !room || !dayOfWeek || !startTime || !endTime || !semester) {
+    if (!courseId || !normalizedSectionCode || !String(building || '').trim() || !String(room || '').trim() || !dayOfWeek || !startTime || !endTime || !semester) {
       return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin lớp học phần.' });
     }
+    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedSectionCode))
+      return res.status(400).json({ message: 'Mã lớp học phần phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.' });
+    if (String(semester).trim().length < 6 || String(semester).trim().length > 20)
+      return res.status(400).json({ message: 'Học kỳ học phải dài từ 6 đến 20 ký tự.' });
+    const courseOwner = await get("SELECT id, ownerUserId FROM courses WHERE id = ?", [courseId]);
+    if (!courseOwner) return res.status(400).json({ message: "Môn học không tồn tại." });
+    if (req.user.role === "lecturer" && Number(courseOwner.ownerUserId) !== Number(req.user.id))
+        return res.status(403).json({ message: "Bạn chỉ được mở lớp cho môn học do mình tạo." });
+    if (String(room).trim().length < 4 || String(room).trim().length > 30)
+        return res.status(400).json({ message: "Phòng học phải từ 4 đến 30 ký tự." });
+    if (!BUILDINGS.includes(String(building).trim()))
+        return res.status(400).json({ message: "Tòa nhà không hợp lệ. Chọn Khu A, Khu B, A1 hoặc Khu C." });
+    if (
+        !WEEKDAY_ORDER.includes(dayOfWeek) ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) ||
+        timeToMinutes(endTime) <= timeToMinutes(startTime)
+    )
+        return res
+            .status(400)
+            .json({ message: "Ngày học hoặc khung giờ không hợp lệ; giờ kết thúc phải sau giờ bắt đầu." });
+    if (!Number.isInteger(studentCapacity) || studentCapacity < 1 || studentCapacity > 120)
+        return res.status(400).json({ message: "Sĩ số tối đa phải là số nguyên từ 1 đến 120." });
+    const datesError = validateSectionDates({ startDate, endDate });
+    if (datesError) return res.status(400).json({ message: datesError });
+    if (status && !["open", "closed"].includes(status))
+        return res.status(400).json({ message: "Trạng thái đăng ký không hợp lệ." });
+    const conflict = await findSectionConflict({
+        building,
+        room,
+        dayOfWeek,
+        startTime,
+        endTime,
+        startDate,
+        endDate,
+        semester,
+        lecturerId: req.user.id,
+    });
+    if (conflict) return res.status(400).json({ message: buildSectionConflictMessage(conflict, dayOfWeek) });
+    const scheduleConflict = await findScheduleConflict({
+        semester,
+        dayOfWeek,
+        startTime,
+        endTime,
+        className: normalizedSectionCode,
+        building,
+        room,
+        createdBy: req.user.id,
+    });
+    if (scheduleConflict) return res.status(400).json({ message: buildConflictMessage(scheduleConflict, dayOfWeek) });
 
-    const existed = await get('SELECT id FROM sections WHERE sectionCode = ?', [sectionCode]);
+    const existed = await get('SELECT id FROM sections WHERE LOWER(sectionCode) = LOWER(?)', [normalizedSectionCode]);
     if (existed) {
       return res.status(400).json({ message: 'Mã lớp học phần đã tồn tại.' });
     }
 
     const result = await run(
-      `INSERT INTO sections (courseId, sectionCode, lecturerId, room, dayOfWeek, startTime, endTime, semester, maxStudents, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [courseId, sectionCode, req.user.id, room, dayOfWeek, startTime, endTime, semester, Number(maxStudents || 50), status || 'open']
+      `INSERT INTO sections (courseId, sectionCode, lecturerId, building, room, dayOfWeek, startTime, endTime, semester, maxStudents, status, startDate, endDate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [courseId, normalizedSectionCode, req.user.id, building.trim(), room.trim(), dayOfWeek, startTime, endTime, semester.trim(), studentCapacity, status || 'open', startDate, endDate]
     );
 
     const section = await getCurrentSectionWithCount(result.id);
@@ -1455,7 +1723,8 @@ app.post('/api/sections', authMiddleware, requireRoles(...ROLE_STAFF), async (re
 app.put('/api/sections/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { id } = req.params;
-    const { courseId, sectionCode, room, dayOfWeek, startTime, endTime, semester, maxStudents, status } = req.body;
+    const { courseId, sectionCode, building, room, dayOfWeek, startTime, endTime, semester, maxStudents, status, startDate, endDate } = req.body;
+    const normalizedSectionCode = String(sectionCode || '').trim();
 
     const current = await get('SELECT * FROM sections WHERE id = ?', [id]);
     if (!current) {
@@ -1465,17 +1734,104 @@ app.put('/api/sections/:id', authMiddleware, requireRoles(...ROLE_STAFF), async 
     if (req.user.role === 'lecturer' && Number(current.lecturerId) !== Number(req.user.id)) {
       return res.status(403).json({ message: 'Bạn chỉ được sửa lớp học phần do mình tạo.' });
     }
+    const enrollmentCount = await get("SELECT COUNT(*) AS count FROM enrollments WHERE sectionId = ?", [id]);
+    const datesError = validateSectionDates({ startDate, endDate });
+    if (datesError) return res.status(400).json({ message: datesError });
+    if (status && !["open", "closed"].includes(status))
+        return res.status(400).json({ message: "Trạng thái đăng ký không hợp lệ." });
+    if (
+        !courseId ||
+        !normalizedSectionCode ||
+        !String(building || "").trim() ||
+        !String(room || "").trim() ||
+        !String(semester || "").trim() ||
+        !WEEKDAY_ORDER.includes(dayOfWeek) ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || "") ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime || "") ||
+        timeToMinutes(endTime) <= timeToMinutes(startTime)
+    ) {
+        return res.status(400).json({ message: "Thông tin lớp không hợp lệ; giờ kết thúc phải sau giờ bắt đầu." });
+    }
+    if (String(semester).trim().length < 6 || String(semester).trim().length > 20)
+        return res.status(400).json({ message: 'Học kỳ học phải dài từ 6 đến 20 ký tự.' });
+    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedSectionCode))
+        return res.status(400).json({ message: 'Mã lớp học phần phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.' });
+    const courseOwner = await get("SELECT id, ownerUserId FROM courses WHERE id = ?", [courseId]);
+    if (!courseOwner) return res.status(400).json({ message: "Môn học không tồn tại." });
+    if (req.user.role === "lecturer" && Number(courseOwner.ownerUserId) !== Number(req.user.id))
+        return res.status(403).json({ message: "Bạn chỉ được mở lớp cho môn học do mình tạo." });
+    if (String(room).trim().length < 4 || String(room).trim().length > 30)
+        return res.status(400).json({ message: "Phòng học phải từ 4 đến 30 ký tự." });
+    if (!BUILDINGS.includes(String(building).trim()))
+        return res.status(400).json({ message: "Tòa nhà không hợp lệ. Chọn Khu A, Khu B, A1 hoặc Khu C." });
+    if (
+        !Number.isInteger(Number(maxStudents)) ||
+        Number(maxStudents) < Number(enrollmentCount.count) ||
+        Number(maxStudents) > 120
+    ) {
+        return res.status(400).json({ message: `Sĩ số tối đa phải từ số đã đăng ký (${enrollmentCount.count}) đến 120.` });
+    }
+    const datesChanged = startDate !== current.startDate || endDate !== current.endDate;
+    if (datesChanged) {
+        const hasSectionGrades = await get("SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1", [
+            current.courseId,
+            current.semester,
+        ]);
+        if (Number(enrollmentCount.count) > 0 || hasSectionGrades) {
+            return res
+                .status(400)
+                .json({
+                    message:
+                        "Không thể đổi ngày học phần khi lớp đã có sinh viên đăng ký hoặc điểm; hãy đóng lớp và giữ nguyên lịch sử.",
+                });
+        }
+    }
+    if (Number(courseId) !== Number(current.courseId) || String(semester) !== current.semester) {
+        const hasGrades = await get("SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1", [
+            current.courseId,
+            current.semester,
+        ]);
+        if (Number(enrollmentCount.count) || hasGrades)
+            return res
+                .status(400)
+                .json({ message: "Không thể đổi môn/học kỳ khi lớp đã có sinh viên đăng ký hoặc đã phát sinh điểm." });
+    }
 
-    const duplicate = await get('SELECT id FROM sections WHERE sectionCode = ? AND id != ?', [sectionCode, id]);
+    const conflict = await findSectionConflict({
+        building,
+        room,
+        dayOfWeek,
+        startTime,
+        endTime,
+        startDate,
+        endDate,
+        semester,
+        lecturerId: current.lecturerId,
+        excludeId: id,
+    });
+    if (conflict) return res.status(400).json({ message: buildSectionConflictMessage(conflict, dayOfWeek) });
+    const scheduleConflict = await findScheduleConflict({
+        semester,
+        dayOfWeek,
+        startTime,
+        endTime,
+        className: normalizedSectionCode,
+        building,
+        room,
+        createdBy: current.lecturerId,
+    });
+    if (scheduleConflict) return res.status(400).json({ message: buildConflictMessage(scheduleConflict, dayOfWeek) });
+
+    const duplicate = await get('SELECT id FROM sections WHERE LOWER(sectionCode) = LOWER(?) AND id != ?', [normalizedSectionCode, id]);
     if (duplicate) {
       return res.status(400).json({ message: 'Mã lớp học phần đã tồn tại.' });
     }
 
     await run(
       `UPDATE sections
-       SET courseId = ?, sectionCode = ?, room = ?, dayOfWeek = ?, startTime = ?, endTime = ?, semester = ?, maxStudents = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+       SET courseId = ?, sectionCode = ?, building = ?, room = ?, dayOfWeek = ?, startTime = ?, endTime = ?, semester = ?, maxStudents = ?, status = ?, startDate = ?, endDate = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [courseId, sectionCode, room, dayOfWeek, startTime, endTime, semester, Number(maxStudents || 50), status || 'open', id]
+      [courseId, normalizedSectionCode, building.trim(), room.trim(), dayOfWeek, startTime, endTime, semester.trim(), Number(maxStudents), status || 'open', startDate, endDate, id]
     );
 
     const section = await getCurrentSectionWithCount(id);
@@ -1497,6 +1853,11 @@ app.delete('/api/sections/:id', authMiddleware, requireRoles(...ROLE_STAFF), asy
     if (req.user.role === 'lecturer' && Number(current.lecturerId) !== Number(req.user.id)) {
       return res.status(403).json({ message: 'Bạn chỉ được xóa lớp học phần do mình tạo.' });
     }
+
+    const enrollmentCount = await get('SELECT COUNT(*) AS count FROM enrollments WHERE sectionId = ?', [id]);
+    if (Number(enrollmentCount.count) > 0) return res.status(400).json({ message: 'Không thể xóa lớp đã có sinh viên đăng ký. Hãy đóng lớp hoặc hủy đăng ký trước.' });
+    const relatedGrade = await get('SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1', [current.courseId, current.semester]);
+    if (relatedGrade) return res.status(400).json({ message: 'Không thể xóa lớp thuộc môn/học kỳ đã phát sinh điểm; hãy đóng lớp để lưu lịch sử học vụ.' });
 
     await run('DELETE FROM sections WHERE id = ?', [id]);
     return res.json({ message: 'Xóa lớp học phần thành công.' });
@@ -1522,19 +1883,37 @@ app.post('/api/sections/:id/register', authMiddleware, requireRoles('student'), 
     if (section.status !== 'open') {
       return res.status(400).json({ message: 'Lớp học phần đã đóng đăng ký.' });
     }
+    if (!isRegistrationOpen(section)) return res.status(400).json({ message: 'Lớp học phần đã đóng đăng ký.' });
 
     const existed = await get('SELECT id FROM enrollments WHERE sectionId = ? AND studentId = ?', [id, student.id]);
     if (existed) {
       return res.status(400).json({ message: 'Bạn đã đăng ký lớp học phần này rồi.' });
     }
 
+    const sameCourse = await get(`SELECT en.id FROM enrollments en JOIN sections se ON se.id = en.sectionId
+      WHERE en.studentId = ? AND se.courseId = ? AND se.semester = ? LIMIT 1`, [student.id, section.courseId, section.semester]);
+    if (sameCourse) return res.status(400).json({ message: 'Bạn đã đăng ký lớp khác của môn học này trong học kỳ.' });
+
+    const scheduleConflict = await findStudentSectionConflict(student.id, section);
+    if (scheduleConflict) return res.status(400).json({ message: `Trùng lịch với lớp ${scheduleConflict.sectionCode} vào ${scheduleConflict.dayOfWeek}, ${scheduleConflict.startTime}–${scheduleConflict.endTime}.` });
+
     if (Number(section.enrollmentCount) >= Number(section.maxStudents)) {
       return res.status(400).json({ message: 'Lớp học phần đã đủ số lượng sinh viên.' });
     }
 
-    await run('INSERT INTO enrollments (sectionId, studentId) VALUES (?, ?)', [id, student.id]);
+    const inserted = await run(
+      `INSERT OR IGNORE INTO enrollments (sectionId, studentId)
+       SELECT ?, ? WHERE (SELECT COUNT(*) FROM enrollments WHERE sectionId = ?) <
+         (SELECT maxStudents FROM sections WHERE id = ?)`,
+      [id, student.id, id, id]
+    );
+    if (!inserted.changes) {
+      const racedDuplicate = await get('SELECT id FROM enrollments WHERE sectionId = ? AND studentId = ?', [id, student.id]);
+      return res.status(409).json({ message: racedDuplicate ? 'Bạn đã đăng ký lớp học phần này rồi.' : 'Lớp học phần vừa đủ sĩ số.' });
+    }
     return res.json({ message: 'Đăng ký môn học thành công.' });
   } catch (error) {
+    if (String(error.message || '').includes('ENROLLMENT_CONFLICT')) return res.status(409).json({ message: 'Đăng ký bị trùng môn học trong học kỳ hoặc trùng lịch với lớp khác.' });
     console.error(error);
     return res.status(500).json({ message: 'Lỗi server khi đăng ký môn học.' });
   }
@@ -1552,6 +1931,9 @@ app.delete('/api/sections/:id/register', authMiddleware, requireRoles('student')
     if (!existed) {
       return res.status(404).json({ message: 'Bạn chưa đăng ký lớp học phần này.' });
     }
+
+    const section = await get('SELECT * FROM sections WHERE id = ?', [id]);
+    if (!section || !isRegistrationOpen(section)) return res.status(400).json({ message: 'Lớp học phần đã đóng đăng ký nên không thể hủy đăng ký.' });
 
     await run('DELETE FROM enrollments WHERE sectionId = ? AND studentId = ?', [id, student.id]);
     return res.json({ message: 'Hủy đăng ký môn học thành công.' });
