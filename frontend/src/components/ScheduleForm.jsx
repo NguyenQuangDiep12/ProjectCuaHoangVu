@@ -5,6 +5,7 @@ const weekdays = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 
 const initialForm = {
   courseId: '',
   className: '',
+  building: '',
   room: '',
   dayOfWeek: 'Thứ 2',
   daysOfWeek: ['Thứ 2'],
@@ -21,6 +22,7 @@ export default function ScheduleForm({ courses, currentSchedule, onSubmit, onCan
       setForm({
         courseId: String(currentSchedule.courseId || ''),
         className: currentSchedule.className || '',
+        building: currentSchedule.building || '',
         room: currentSchedule.room || '',
         dayOfWeek: currentSchedule.dayOfWeek || 'Thứ 2',
         daysOfWeek: currentSchedule.dayOfWeek ? [currentSchedule.dayOfWeek] : ['Thứ 2'],
@@ -39,7 +41,7 @@ export default function ScheduleForm({ courses, currentSchedule, onSubmit, onCan
 
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => name === 'building' ? { ...prev, building: value, room: '' } : { ...prev, [name]: value });
   }
 
   function toggleDay(day) {
@@ -91,13 +93,11 @@ export default function ScheduleForm({ courses, currentSchedule, onSubmit, onCan
           required
         />
 
-        <input
-          name="room"
-          placeholder="Phòng học"
-          value={form.room}
-          onChange={handleChange}
-          required
-        />
+        <select name="building" value={form.building} onChange={handleChange} required>
+          <option value="">Chọn tòa nhà</option>
+          {['Khu A', 'Khu B', 'A1', 'Khu C'].map((building) => <option key={building} value={building}>{building}</option>)}
+        </select>
+        <input name="room" placeholder={form.building ? 'Phòng học' : 'Chọn tòa nhà trước'} value={form.room} onChange={handleChange} disabled={!form.building} required />
 
         {currentSchedule ? (
           <select name="dayOfWeek" value={form.dayOfWeek} onChange={handleChange}>

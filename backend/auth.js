@@ -1,5 +1,9 @@
 const jwt = require('jsonwebtoken');
 
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET phải được cấu hình trong môi trường production.');
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'school_management_secret_key_2026';
 
 function createToken(user) {

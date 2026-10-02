@@ -376,6 +376,20 @@ small {
   color: #64748b;
 }
 
+.registration-conflict {
+  display: block;
+  margin-top: 4px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.roster-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .action-buttons {
   display: flex;
   gap: 8px;
@@ -983,4 +997,40 @@ textarea {
   .span-2 {
     grid-column: span 1;
   }
+}
+
+.news-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.news-toolbar input[type='search'] {
+  flex: 1 1 260px;
+}
+
+.news-toolbar select {
+  flex: 0 1 190px;
+}
+
+.news-toolbar .checkbox-row {
+  min-height: 0;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+
+.news-result-count {
+  margin-left: auto;
+  color: #64748b;
+}
+
+textarea {
+  width: 100%;
+  font: inherit;
+  padding: 12px 14px;
+  border: 1px solid #d9e1f2;
+  border-radius: 14px;
+  resize: vertical;
+  box-sizing: border-box;
 }

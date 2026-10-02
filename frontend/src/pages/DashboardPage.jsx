@@ -4,6 +4,7 @@ import CourseForm from '../components/CourseForm';
 import LecturerForm from '../components/LecturerForm';
 import GradeForm from '../components/GradeForm';
 import NavBar from '../components/NavBar';
+import NewsForm, { NEWS_CATEGORIES } from '../components/NewsForm';
 import RoleSidebar from '../components/RoleSidebar';
 import ScheduleForm from '../components/ScheduleForm';
 import SectionForm from '../components/SectionForm';
@@ -26,7 +27,7 @@ const roleSections = {
   ],
   lecturer: [
     { key: 'overview', label: 'Tổng quan', description: 'Xem thống kê học tập' },
-    { key: 'students', label: 'Hồ sơ sinh viên', description: 'Cập nhật hồ sơ học tập' },
+    // { key: 'students', label: 'Hồ sơ sinh viên', description: 'Cập nhật hồ sơ học tập' },
     { key: 'courses', label: 'Môn học', description: 'Tự tạo môn học mới trước khi mở lớp học phần' },
     { key: 'grades', label: 'Nhập điểm', description: 'Nhập và chỉnh sửa điểm số' },
     { key: 'schedules', label: 'Lịch học', description: 'Tạo lịch học cho lớp' },
@@ -38,7 +39,6 @@ const roleSections = {
     { key: 'overview', label: 'Tổng quan', description: 'Thông tin nhanh về học tập' },
     { key: 'profile', label: 'Thông tin cá nhân', description: 'Xem hồ sơ cá nhân' },
     { key: 'grades', label: 'Điểm số', description: 'Xem dashboard bảng điểm và kết quả học tập' },
-    { key: 'gradeExport', label: 'Xuất điểm Excel', description: 'Tải bảng điểm cá nhân ra file Excel để lưu trữ' },
     { key: 'schedule', label: 'Lịch học', description: 'Lịch học tự động hiển thị theo môn đã đăng ký' },
     { key: 'weeklySchedule', label: 'Thời khóa biểu tuần', description: 'Xem thời khóa biểu tuần dạng lưới theo môn đã đăng ký' },
     { key: 'registration', label: 'Đăng ký môn', description: 'Đăng ký hoặc hủy đăng ký lớp học phần' },
@@ -57,14 +57,13 @@ function formatRole(role) {
   return roleMap[role] || role;
 }
 
-function formatFeedbackStatus(status) {
-  const map = {
-    new: 'Mới',
-    in_progress: 'Đang xử lý',
-    resolved: 'Đã phản hồi'
-  };
-
-  return map[status] || status;
+function normalizeText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
 }
 
 function formatDateTime(value) {
@@ -72,6 +71,16 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('vi-VN');
+}
+
+function hasScheduleConflict(candidate, registeredSections) {
+  return registeredSections.some((registered) => (
+    Number(registered.id) !== Number(candidate.id) &&
+    registered.semester === candidate.semester &&
+    registered.dayOfWeek === candidate.dayOfWeek &&
+    String(candidate.startTime || '') < String(registered.endTime || '') &&
+    String(candidate.endTime || '') > String(registered.startTime || '')
+  ));
 }
 
 function escapeHtml(value) {
@@ -102,8 +111,11 @@ export default function DashboardPage() {
   const [editingLecturer, setEditingLecturer] = useState(null);
   const [editingCourse, setEditingCourse] = useState(null);
   const [editingGrade, setEditingGrade] = useState(null);
+  const [gradePrefill, setGradePrefill] = useState(null);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
+  const [sectionRoster, setSectionRoster] = useState(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
   const [editingFeedback, setEditingFeedback] = useState(null);
   const [editingNews, setEditingNews] = useState(null);
   const [studentSearch, setStudentSearch] = useState('');
@@ -114,10 +126,13 @@ export default function DashboardPage() {
   const [sectionSearch, setSectionSearch] = useState('');
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [newsSearch, setNewsSearch] = useState('');
+  const [newsCategoryFilter, setNewsCategoryFilter] = useState('all');
+  const [newsStatusFilter, setNewsStatusFilter] = useState('all');
+  const [newsImportantOnly, setNewsImportantOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
   const [feedbackForm, setFeedbackForm] = useState({ subject: '', message: '' });
-  const [replyForm, setReplyForm] = useState({ adminReply: '', status: 'in_progress' });
+  const [replyForm, setReplyForm] = useState({ adminReply: '' });
 
   const isAdmin = user?.role === 'admin';
   const isLecturer = user?.role === 'lecturer';
@@ -261,23 +276,45 @@ export default function DashboardPage() {
     if (!keyword) return sectionsList;
 
     return sectionsList.filter((section) =>
-      [section.sectionCode, section.courseCode, section.courseName, section.semester, section.room, section.dayOfWeek, section.lecturerName]
+      [section.sectionCode, section.courseCode, section.courseName, section.semester, section.building, section.room, section.dayOfWeek, section.lecturerName]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(keyword))
     );
   }, [sectionSearch, sectionsList]);
 
 
-  const filteredNews = useMemo(() => {
-    const keyword = newsSearch.trim().toLowerCase();
-    if (!keyword) return newsList;
+  const newsCategories = useMemo(() => {
+    const extra = newsList.map((news) => news.category).filter((c) => c && !NEWS_CATEGORIES.includes(c));
+    return [...NEWS_CATEGORIES, ...new Set(extra)];
+  }, [newsList]);
 
-    return newsList.filter((news) =>
-      [news.title, news.summary, news.content, news.category, news.createdByName]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(keyword))
-    );
-  }, [newsSearch, newsList]);
+  const filteredNews = useMemo(() => {
+    // Tìm không phân biệt hoa thường, không cần gõ dấu, nhiều từ khóa phải cùng khớp
+    const keywords = normalizeText(newsSearch).split(/\s+/).filter(Boolean);
+
+    return newsList.filter((news) => {
+      if (newsCategoryFilter !== 'all' && (news.category || 'Thông báo') !== newsCategoryFilter) return false;
+      if (newsStatusFilter !== 'all' && news.status !== newsStatusFilter) return false;
+      if (newsImportantOnly && Number(news.isImportant) !== 1) return false;
+      if (keywords.length === 0) return true;
+
+      const haystack = normalizeText(
+        [news.title, news.summary, news.content, news.category, news.createdByName, formatDateTime(news.createdAt)]
+          .filter(Boolean)
+          .join(' ')
+      );
+      return keywords.every((word) => haystack.includes(word));
+    });
+  }, [newsSearch, newsCategoryFilter, newsStatusFilter, newsImportantOnly, newsList]);
+
+  const hasNewsFilter = Boolean(newsSearch.trim()) || newsCategoryFilter !== 'all' || newsStatusFilter !== 'all' || newsImportantOnly;
+
+  function resetNewsFilters() {
+    setNewsSearch('');
+    setNewsCategoryFilter('all');
+    setNewsStatusFilter('all');
+    setNewsImportantOnly(false);
+  }
 
   const filteredFeedbacks = useMemo(() => {
     const keyword = feedbackSearch.trim().toLowerCase();
@@ -326,11 +363,6 @@ export default function DashboardPage() {
     [schedules, user?.id]
   );
 
-  const openFeedbackCount = useMemo(
-    () => feedbacks.filter((item) => item.status !== 'resolved').length,
-    [feedbacks]
-  );
-
   const summaryCards = useMemo(() => {
     if (isStudent) {
       return [
@@ -354,7 +386,6 @@ export default function DashboardPage() {
       { label: 'Lớp học phần', value: stats.totalSections || 0, helper: 'Lớp do giảng viên tạo' },
       { label: 'Lượt đăng ký', value: stats.totalEnrollments || 0, helper: 'Tổng sinh viên đăng ký môn' },
       { label: 'Ý kiến sinh viên', value: stats.totalFeedbacks || 0, helper: 'Tổng phản hồi gửi cho admin' },
-      { label: 'Chưa xử lý', value: stats.openFeedbacks || 0, helper: 'Ý kiến cần admin xem' },
       { label: 'Tin tức', value: stats.totalNews || 0, helper: 'Số thông báo đã công bố' },
       { label: 'Điểm TB hệ thống', value: stats.averageGrade, helper: 'Trung bình toàn bộ điểm' }
     ];
@@ -518,6 +549,7 @@ export default function DashboardPage() {
         setMessage(data.message);
       }
 
+      setGradePrefill(null);
       await loadData();
     } catch (err) {
       setError(err.message);
@@ -624,6 +656,35 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleViewSectionRoster(section) {
+    setRosterLoading(true);
+    setError('');
+    try {
+      const roster = await apiRequest(`/sections/${section.id}/students`, { token });
+      setSectionRoster({ ...roster, section });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRosterLoading(false);
+    }
+  }
+
+  function startGradeForSectionStudent(student, section) {
+    const existingGrade = grades.find((grade) => (
+      Number(grade.studentId) === Number(student.id) &&
+      Number(grade.courseId) === Number(section.courseId) &&
+      grade.semester === section.semester
+    ));
+    setEditingGrade(existingGrade || null);
+    setGradePrefill(existingGrade ? null : {
+      studentId: student.id,
+      courseId: section.courseId,
+      semester: section.semester
+    });
+    setSectionRoster(null);
+    setActiveSection('grades');
+  }
+
   async function handleRegisterSection(id) {
     try {
       const data = await apiRequest(`/sections/${id}/register`, { method: 'POST', token });
@@ -717,7 +778,7 @@ export default function DashboardPage() {
       });
       setMessage(data.message);
       setEditingFeedback(null);
-      setReplyForm({ adminReply: '', status: 'in_progress' });
+      setReplyForm({ adminReply: '' });
       await loadData();
     } catch (err) {
       setError(err.message);
@@ -727,8 +788,7 @@ export default function DashboardPage() {
   function startReplyFeedback(feedback) {
     setEditingFeedback(feedback);
     setReplyForm({
-      adminReply: feedback.adminReply || '',
-      status: feedback.status || 'in_progress'
+      adminReply: feedback.adminReply || ''
     });
   }
 
@@ -971,7 +1031,7 @@ export default function DashboardPage() {
                         <td>{schedule.courseCode} - {schedule.courseName}</td>
                         <td>{schedule.lecturerName || '--'}</td>
                         <td>{schedule.dayOfWeek}, {schedule.startTime} - {schedule.endTime}</td>
-                        <td>{schedule.room}</td>
+                        <td>{schedule.building} · {schedule.room}</td>
                       </tr>
                     ))}
                     {schedules.length === 0 && (
@@ -1225,7 +1285,7 @@ export default function DashboardPage() {
         <div className="card compact-card wide-card">
           <div className="card-header">
             <h3>Danh sách môn học</h3>
-            <p>Giảng viên có thể nhập tên môn học trực tiếp từ bàn phím rồi dùng môn đó để tạo lớp học phần.</p>
+            <p>Tạo môn học trước, sau đó mở lớp học phần để sinh viên đăng ký.</p>
           </div>
 
           <div className="toolbar">
@@ -1307,12 +1367,13 @@ export default function DashboardPage() {
           </section>
         )}
 
-        <section className="dashboard-grid two-columns">
+        <section className={`dashboard-grid ${isStudent ? '' : 'two-columns'}`}>
           {!isStudent && (
             <GradeForm
               students={students}
               courses={courses}
               currentGrade={editingGrade}
+              initialValues={gradePrefill}
               onSubmit={handleCreateOrUpdateGrade}
               onCancel={() => setEditingGrade(null)}
             />
@@ -1323,14 +1384,6 @@ export default function DashboardPage() {
               <h3>{isStudent ? 'Bảng điểm cá nhân' : 'Bảng điểm sinh viên'}</h3>
               <p>{isStudent ? 'Xem toàn bộ điểm số của bạn.' : 'Tìm kiếm theo sinh viên, môn học hoặc học kỳ.'}</p>
             </div>
-
-            {isStudent && (
-              <div className="toolbar">
-                <button className="btn btn-primary" type="button" onClick={handleExportGradesExcel}>
-                  Xuất file Excel
-                </button>
-              </div>
-            )}
 
             {!isStudent && (
               <div className="toolbar">
@@ -1576,7 +1629,7 @@ export default function DashboardPage() {
                     <td>{schedule.className}</td>
                     <td>{schedule.dayOfWeek}</td>
                     <td>{schedule.startTime} - {schedule.endTime}</td>
-                    <td>{schedule.room}</td>
+                    <td>{schedule.building} · {schedule.room}</td>
                     <td>{schedule.semester}</td>
                     {!isStudent && (
                       <td>
@@ -1618,7 +1671,7 @@ export default function DashboardPage() {
         <div className="card compact-card wide-card">
           <div className="card-header">
             <h3>Quản lý lớp học phần</h3>
-            <p>Giảng viên tạo lớp, admin theo dõi số lượng sinh viên đăng ký.</p>
+            <p>Theo dõi chỗ còn trống, lịch học và trạng thái đăng ký của từng lớp.</p>
           </div>
 
           <div className="toolbar">
@@ -1636,8 +1689,9 @@ export default function DashboardPage() {
                   <th>Mã lớp</th>
                   <th>Môn học</th>
                   <th>Giảng viên</th>
+                  <th>Tòa nhà / phòng</th>
                   <th>Lịch</th>
-                  <th>Sĩ số</th>
+                  <th>Chỗ trống</th>
                   <th>Trạng thái</th>
                   <th>Thao tác</th>
                 </tr>
@@ -1651,8 +1705,12 @@ export default function DashboardPage() {
                       <small>{section.courseCode} - {section.semester}</small>
                     </td>
                     <td>{section.lecturerName}</td>
-                    <td>{section.dayOfWeek}, {section.startTime} - {section.endTime}</td>
-                    <td>{section.enrollmentCount}/{section.maxStudents}</td>
+                    <td>{section.building} · {section.room}</td>
+                    <td>
+                      {section.dayOfWeek}, {section.startTime} - {section.endTime}
+                      <small>Học phần: {section.startDate} – {section.endDate}</small>
+                    </td>
+                    <td><strong>{Math.max(0, Number(section.maxStudents) - Number(section.enrollmentCount))}</strong> / {section.maxStudents}<small> đã đăng ký {section.enrollmentCount}</small></td>
                     <td>
                       <span className={`pill ${section.status === 'open' ? 'success' : 'neutral'}`}>
                         {section.status === 'open' ? 'Mở đăng ký' : 'Đóng đăng ký'}
@@ -1660,6 +1718,9 @@ export default function DashboardPage() {
                     </td>
                     <td>
                       <div className="action-buttons">
+                        <button className="btn btn-light" onClick={() => handleViewSectionRoster(section)}>
+                          Sinh viên ({section.enrollmentCount || 0})
+                        </button>
                         <button className="btn btn-warning" onClick={() => setEditingSection(section)}>
                           Sửa
                         </button>
@@ -1672,13 +1733,46 @@ export default function DashboardPage() {
                 ))}
                 {filteredSections.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="empty-cell">Chưa có lớp học phần nào.</td>
+                    <td colSpan="8" className="empty-cell">Chưa có lớp học phần nào.</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
+        {rosterLoading && <div className="card">Đang tải danh sách sinh viên...</div>}
+        {sectionRoster && (
+          <div className="card compact-card wide-card">
+            <div className="card-header roster-header">
+              <div>
+                <h3>Sinh viên đã đăng ký: {sectionRoster.section.sectionCode}</h3>
+                <p>{sectionRoster.section.courseCode} - {sectionRoster.section.courseName} · {sectionRoster.enrollmentCount} / {sectionRoster.section.maxStudents} sinh viên</p>
+              </div>
+              <button className="btn btn-light" onClick={() => setSectionRoster(null)}>Đóng</button>
+            </div>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Mã sinh viên</th><th>Họ và tên</th><th>Email</th><th>Ngày đăng ký</th><th>Điểm</th></tr>
+                </thead>
+                <tbody>
+                  {sectionRoster.students.map((student) => (
+                    <tr key={student.id}>
+                      <td>{student.studentCode}</td>
+                      <td>{student.fullName}</td>
+                      <td>{student.email || '--'}</td>
+                      <td>{formatDateTime(student.enrolledAt)}</td>
+                      <td><button className="btn btn-primary" onClick={() => startGradeForSectionStudent(student, sectionRoster.section)}>{grades.some((grade) => Number(grade.studentId) === Number(student.id) && Number(grade.courseId) === Number(sectionRoster.section.courseId) && grade.semester === sectionRoster.section.semester) ? 'Cập nhật điểm' : 'Nhập điểm'}</button></td>
+                    </tr>
+                  ))}
+                  {sectionRoster.students.length === 0 && (
+                    <tr><td colSpan="5" className="empty-cell">Chưa có sinh viên đăng ký lớp này.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
     );
   }
@@ -1688,7 +1782,7 @@ export default function DashboardPage() {
       <section className="card compact-card wide-card">
         <div className="card-header">
           <h3>Đăng ký môn học</h3>
-          <p>Sau khi đăng ký xong, lịch học sẽ tự động hiển thị ở mục Lịch học cá nhân.</p>
+          <p>Chỉ đăng ký được lớp còn chỗ và không trùng lịch với lớp bạn đã chọn. Lịch được cập nhật sau khi đăng ký.</p>
         </div>
 
         <div className="toolbar">
@@ -1706,9 +1800,9 @@ export default function DashboardPage() {
                 <th>Mã lớp</th>
                 <th>Môn học</th>
                 <th>Giảng viên</th>
+                <th>Tòa nhà / phòng</th>
+                <th>Chỗ trống</th>
                 <th>Lịch học</th>
-                <th>Phòng</th>
-                <th>Sĩ số</th>
                 <th>Trạng thái</th>
                 <th>Đăng ký</th>
               </tr>
@@ -1718,6 +1812,8 @@ export default function DashboardPage() {
                 const isRegisteredSection = Number(section.isRegistered) === 1;
                 const isFull = Number(section.enrollmentCount) >= Number(section.maxStudents);
                 const isClosed = section.status !== 'open';
+                const registrationStatus = isClosed ? 'Đóng đăng ký' : 'Đang mở';
+                const conflict = !isRegisteredSection && hasScheduleConflict(section, sectionsList.filter((item) => Number(item.isRegistered) === 1));
 
                 return (
                   <tr key={section.id}>
@@ -1727,12 +1823,16 @@ export default function DashboardPage() {
                       <small>{section.courseCode} - {section.semester}</small>
                     </td>
                     <td>{section.lecturerName}</td>
-                    <td>{section.dayOfWeek}, {section.startTime} - {section.endTime}</td>
-                    <td>{section.room}</td>
-                    <td>{section.enrollmentCount}/{section.maxStudents}</td>
+                    <td>{section.building} · {section.room}</td>
+                    <td><strong>{Math.max(0, Number(section.maxStudents) - Number(section.enrollmentCount))}</strong> / {section.maxStudents}</td>
+                    <td>
+                      <div>{section.dayOfWeek}, {section.startTime} - {section.endTime}</div>
+                      <small>Học phần: {section.startDate} – {section.endDate}</small>
+                      {conflict && <small className="registration-conflict">Trùng lịch với lớp đã đăng ký</small>}
+                    </td>
                     <td>
                       <span className={`pill ${isClosed ? 'neutral' : 'success'}`}>
-                        {isClosed ? 'Đóng đăng ký' : 'Mở đăng ký'}
+                        {registrationStatus}
                       </span>
                     </td>
                     <td>
@@ -1743,10 +1843,10 @@ export default function DashboardPage() {
                       ) : (
                         <button
                           className="btn btn-primary"
-                          disabled={isClosed || isFull}
+                          disabled={isClosed || isFull || conflict}
                           onClick={() => handleRegisterSection(section.id)}
                         >
-                          {isFull ? 'Đã đầy' : 'Đăng ký'}
+                          {isFull ? 'Đã đầy' : conflict ? 'Trùng lịch' : isClosed ? 'Đã đóng' : 'Đăng ký'}
                         </button>
                       )}
                     </td>
@@ -1776,13 +1876,17 @@ export default function DashboardPage() {
             </div>
 
             <form className="grid-form" onSubmit={handleSubmitFeedback}>
-              <input
+              <input 
+                minLength="6"
+                maxLength="30"
                 placeholder="Tiêu đề ý kiến"
                 value={feedbackForm.subject}
                 onChange={(event) => setFeedbackForm((prev) => ({ ...prev, subject: event.target.value }))}
                 required
               />
               <textarea
+                minLength="6"
+                maxLength="200"
                 rows="6"
                 placeholder="Nhập nội dung chi tiết..."
                 value={feedbackForm.message}
@@ -1798,24 +1902,14 @@ export default function DashboardPage() {
           <div className="card compact-card wide-card">
             <div className="card-header">
               <h3>Lịch sử ý kiến đã gửi</h3>
-              <p>Theo dõi trạng thái xử lý và phản hồi từ admin.</p>
+              <p>Theo dõi phản hồi từ admin.</p>
             </div>
-
-            <div className="toolbar">
-              <input
-                placeholder="Tìm kiếm ý kiến của bạn..."
-                value={feedbackSearch}
-                onChange={(event) => setFeedbackSearch(event.target.value)}
-              />
-            </div>
-
             <div className="table-wrapper">
               <table>
                 <thead>
                   <tr>
                     <th>Tiêu đề</th>
                     <th>Nội dung</th>
-                    <th>Trạng thái</th>
                     <th>Phản hồi admin</th>
                   </tr>
                 </thead>
@@ -1824,17 +1918,12 @@ export default function DashboardPage() {
                     <tr key={feedback.id}>
                       <td>{feedback.subject}</td>
                       <td>{feedback.message}</td>
-                      <td>
-                        <span className={`pill ${feedback.status === 'resolved' ? 'success' : 'neutral'}`}>
-                          {formatFeedbackStatus(feedback.status)}
-                        </span>
-                      </td>
                       <td>{feedback.adminReply || 'Chưa có phản hồi'}</td>
                     </tr>
                   ))}
                   {filteredFeedbacks.length === 0 && (
                     <tr>
-                      <td colSpan="4" className="empty-cell">Bạn chưa gửi ý kiến nào.</td>
+                      <td colSpan="3" className="empty-cell">Bạn chưa gửi ý kiến nào.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1853,13 +1942,6 @@ export default function DashboardPage() {
             <p>Admin có thể xem trực tiếp và phản hồi ngay trong hệ thống.</p>
           </div>
 
-          <div className="toolbar">
-            <input
-              placeholder="Tìm kiếm ý kiến sinh viên..."
-              value={feedbackSearch}
-              onChange={(event) => setFeedbackSearch(event.target.value)}
-            />
-          </div>
 
           <div className="table-wrapper">
             <table>
@@ -1868,7 +1950,6 @@ export default function DashboardPage() {
                   <th>Sinh viên</th>
                   <th>Tiêu đề</th>
                   <th>Nội dung</th>
-                  <th>Trạng thái</th>
                   <th>Phản hồi</th>
                   <th>Thao tác</th>
                 </tr>
@@ -1882,11 +1963,6 @@ export default function DashboardPage() {
                     </td>
                     <td>{feedback.subject}</td>
                     <td>{feedback.message}</td>
-                    <td>
-                      <span className={`pill ${feedback.status === 'resolved' ? 'success' : 'neutral'}`}>
-                        {formatFeedbackStatus(feedback.status)}
-                      </span>
-                    </td>
                     <td>{feedback.adminReply || 'Chưa phản hồi'}</td>
                     <td>
                       <button className="btn btn-warning" onClick={() => startReplyFeedback(feedback)}>
@@ -1897,7 +1973,7 @@ export default function DashboardPage() {
                 ))}
                 {filteredFeedbacks.length === 0 && (
                   <tr>
-                    <td colSpan="6" className="empty-cell">Chưa có ý kiến nào từ sinh viên.</td>
+                    <td colSpan="5" className="empty-cell">Chưa có ý kiến nào từ sinh viên.</td>
                   </tr>
                 )}
               </tbody>
@@ -1908,21 +1984,15 @@ export default function DashboardPage() {
         <div className="card compact-card">
           <div className="card-header">
             <h3>{editingFeedback ? 'Phản hồi ý kiến' : 'Chọn một ý kiến để phản hồi'}</h3>
-            <p>{editingFeedback ? 'Cập nhật trạng thái và trả lời trực tiếp cho sinh viên.' : 'Nhấn nút Phản hồi ở bảng bên trái để xử lý.'}</p>
+            <p>{editingFeedback ? 'Trả lời trực tiếp cho sinh viên.' : 'Nhấn nút Phản hồi ở bảng bên trái để xử lý.'}</p>
           </div>
 
           {editingFeedback ? (
             <form className="grid-form" onSubmit={handleReplyFeedback}>
               <input value={editingFeedback.subject} disabled />
-              <select
-                value={replyForm.status}
-                onChange={(event) => setReplyForm((prev) => ({ ...prev, status: event.target.value }))}
-              >
-                <option value="new">Mới</option>
-                <option value="in_progress">Đang xử lý</option>
-                <option value="resolved">Đã phản hồi</option>
-              </select>
               <textarea
+                minLength="8"
+                maxLength="255"
                 rows="8"
                 placeholder="Nhập phản hồi của admin..."
                 value={replyForm.adminReply}
@@ -1935,7 +2005,7 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => {
                     setEditingFeedback(null);
-                    setReplyForm({ adminReply: '', status: 'in_progress' });
+                    setReplyForm({ adminReply: '' });
                   }}
                 >
                   Hủy
@@ -1945,9 +2015,6 @@ export default function DashboardPage() {
           ) : (
             <div className="profile-grid">
               <div><strong>Tổng ý kiến:</strong> {feedbacks.length}</div>
-              <div><strong>Chưa xử lý:</strong> {openFeedbackCount}</div>
-              <div><strong>Đã phản hồi:</strong> {feedbacks.filter((item) => item.status === 'resolved').length}</div>
-              <div><strong>Đang xử lý:</strong> {feedbacks.filter((item) => item.status === 'in_progress').length}</div>
             </div>
           )}
         </div>
@@ -1955,23 +2022,63 @@ export default function DashboardPage() {
     );
   }
 
+  function renderNewsToolbar(showStatus) {
+    return (
+      <div className="toolbar news-toolbar">
+        <input
+          type="search"
+          placeholder="Tìm theo tiêu đề, nội dung, phân loại, người đăng... (không cần gõ dấu)"
+          value={newsSearch}
+          onChange={(event) => setNewsSearch(event.target.value)}
+        />
+        <select value={newsCategoryFilter} onChange={(event) => setNewsCategoryFilter(event.target.value)}>
+          <option value="all">Tất cả phân loại</option>
+          {newsCategories.map((category) => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+        </select>
+        {showStatus && (
+          <select value={newsStatusFilter} onChange={(event) => setNewsStatusFilter(event.target.value)}>
+            <option value="all">Mọi trạng thái</option>
+            <option value="published">Đang hiển thị</option>
+            <option value="draft">Bản nháp</option>
+          </select>
+        )}
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={newsImportantOnly}
+            onChange={(event) => setNewsImportantOnly(event.target.checked)}
+          />
+          <span>Chỉ tin quan trọng</span>
+        </label>
+        {hasNewsFilter && (
+          <button type="button" className="btn btn-light" onClick={resetNewsFilters}>Xóa bộ lọc</button>
+        )}
+        <small className="news-result-count">
+          {filteredNews.length}/{newsList.length} tin
+        </small>
+      </div>
+    );
+  }
+
   function renderNewsSection() {
     if (isAdmin) {
       return (
         <section className="dashboard-grid two-columns">
+          <NewsForm
+            currentNews={editingNews}
+            onSubmit={handleCreateOrUpdateNews}
+            onCancel={() => setEditingNews(null)}
+          />
+
           <div className="card compact-card wide-card">
             <div className="card-header">
               <h3>Quản lý tin tức</h3>
               <p>Đăng thông báo nghỉ học, lịch học bù hoặc các nội dung học vụ để toàn hệ thống theo dõi.</p>
             </div>
 
-            <div className="toolbar">
-              <input
-                placeholder="Tìm kiếm tin tức..."
-                value={newsSearch}
-                onChange={(event) => setNewsSearch(event.target.value)}
-              />
-            </div>
+            {renderNewsToolbar(true)}
 
             <div className="table-wrapper">
               <table>
@@ -2015,7 +2122,7 @@ export default function DashboardPage() {
                   ))}
                   {filteredNews.length === 0 && (
                     <tr>
-                      <td colSpan="5" className="empty-cell">Chưa có tin tức nào.</td>
+                      <td colSpan="5" className="empty-cell">{hasNewsFilter ? 'Không có tin tức nào khớp bộ lọc.' : 'Chưa có tin tức nào.'}</td>
                     </tr>
                   )}
                 </tbody>
@@ -2033,13 +2140,7 @@ export default function DashboardPage() {
           <p>Các thông báo mới nhất từ admin như nghỉ học, lịch học bù hoặc nội dung học vụ quan trọng.</p>
         </div>
 
-        <div className="toolbar">
-          <input
-            placeholder="Tìm kiếm tin tức..."
-            value={newsSearch}
-            onChange={(event) => setNewsSearch(event.target.value)}
-          />
-        </div>
+        {renderNewsToolbar(false)}
 
         <div className="news-list">
           {filteredNews.map((news) => (
@@ -2065,7 +2166,7 @@ export default function DashboardPage() {
 
           {filteredNews.length === 0 && (
             <div className="card compact-card">
-              <p className="empty-cell">Hiện chưa có tin tức nào để hiển thị.</p>
+              <p className="empty-cell">{hasNewsFilter ? 'Không có tin tức nào khớp bộ lọc.' : 'Hiện chưa có tin tức nào để hiển thị.'}</p>
             </div>
           )}
         </div>

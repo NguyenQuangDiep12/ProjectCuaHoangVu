@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api';
+import { getBusinessDate } from '../utils/businessDate';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export default function RegisterPage() {
     studentCode: '',
     className: '',
     major: '',
-    gender: '',
+    gender: 'Nam',
     dob: '',
     phone: ''
   });
@@ -50,37 +51,59 @@ export default function RegisterPage() {
     <div className="auth-page">
       <div className="auth-card register-card">
         <h2>Đăng ký</h2>
-        <p>Tạo tài khoản lecturer hoặc student</p>
+        <p>Tạo tài khoản sinh viên</p>
 
         {error && <div className="alert error">{error}</div>}
         {success && <div className="alert success">{success}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form">
-          <input name="username" placeholder="Username" value={form.username} onChange={handleChange} required />
-          <input type="password" name="password" placeholder="Password" value={form.password} onChange={handleChange} required />
-          <input name="fullName" placeholder="Họ và tên" value={form.fullName} onChange={handleChange} required />
-          <input type="email" name="email" placeholder="Email" value={form.email} onChange={handleChange} required />
+          <input 
+            name="username" 
+            placeholder="Username" 
+            value={form.username} 
+            minLength={6}
+            maxLength={30}
+            pattern="[A-Za-z0-9_.-]{6,30}"
+            onChange={handleChange} 
+            required />
+          <input 
+            type="password" 
+            name="password" 
+            placeholder="Password" 
+            value={form.password} 
+            minLength={10}
+            maxLength={64}
+            title="10-64 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt"
+            onChange={handleChange} 
+            required />
+          <input 
+            name="fullName" 
+            placeholder="Họ và tên"
+            value={form.fullName} 
+            minLength={2}
+            maxLength={80}
+            pattern="[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ '.-]{1,79}"
+            onChange={handleChange} 
+            required />
+          <input 
+            type="email" 
+            maxLength={254}
+            name="email" 
+            placeholder="Email" 
+            value={form.email}
+            onChange={handleChange} 
+            required />
 
-          <select name="role" value={form.role} onChange={handleChange}>
-            <option value="student">Student</option>
-            <option value="lecturer">Lecturer</option>
+          <input value="Mã sinh viên sẽ được hệ thống tự tạo (222 + 7 chữ số)" disabled aria-label="Mã sinh viên tự động" />
+          <input name="className" minLength={1} maxLength={30} placeholder="Lớp" value={form.className} onChange={handleChange} required />
+          <input name="major" minLength={2} maxLength={80} required placeholder="Ngành học" value={form.major} onChange={handleChange} />
+          <select name="gender" value={form.gender} onChange={handleChange}>
+            <option value="Nam">Nam</option>
+            <option value="Nữ">Nữ</option>
+            <option value="Khác">Khác</option>
           </select>
-
-          {form.role === 'student' && (
-            <>
-              <input name="studentCode" placeholder="Mã sinh viên" value={form.studentCode} onChange={handleChange} required />
-              <input name="className" placeholder="Lớp" value={form.className} onChange={handleChange} />
-              <input name="major" placeholder="Ngành học" value={form.major} onChange={handleChange} />
-              <select name="gender" value={form.gender} onChange={handleChange}>
-                <option value="">Chọn giới tính</option>
-                <option value="Nam">Nam</option>
-                <option value="Nữ">Nữ</option>
-                <option value="Khác">Khác</option>
-              </select>
-              <input type="date" name="dob" value={form.dob} onChange={handleChange} />
-              <input name="phone" placeholder="Số điện thoại" value={form.phone} onChange={handleChange} />
-            </>
-          )}
+          <input type="date" required name="dob" max={getBusinessDate()} value={form.dob} onChange={handleChange} />
+          <input name="phone" type="tel" pattern="\\+?[0-9]{9,15}" minLength={9} maxLength={16} placeholder="Số điện thoại" value={form.phone} onChange={handleChange} required />
 
           <button className="btn btn-primary full-width" type="submit" disabled={submitting}>
             {submitting ? 'Đang đăng ký...' : 'Đăng ký'}
