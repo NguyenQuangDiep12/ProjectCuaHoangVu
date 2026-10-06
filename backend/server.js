@@ -1785,19 +1785,31 @@ app.put('/api/sections/:id', authMiddleware, requireRoles(...ROLE_STAFF), async 
     if (datesError) return res.status(400).json({ message: datesError });
     if (status && !["open", "closed"].includes(status))
         return res.status(400).json({ message: "Trạng thái đăng ký không hợp lệ." });
-    if (
-        !courseId ||
-        !normalizedSectionCode ||
-        !String(building || "").trim() ||
-        !String(room || "").trim() ||
-        !String(semester || "").trim() ||
-        !WEEKDAY_ORDER.includes(dayOfWeek) ||
-        !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || "") ||
-        !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime || "") ||
-        timeToMinutes(endTime) <= timeToMinutes(startTime)
-    ) {
-        return res.status(400).json({ message: "Thông tin lớp không hợp lệ; giờ kết thúc phải sau giờ bắt đầu." });
-    }
+
+    if (!courseId || !normalizedSectionCode || ...) {
+    return res.status(400).json({
+        message: 'Thông tin lớp học không hợp lệ.'
+    });
+}
+
+if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || '')) {
+    return res.status(400).json({
+        message: 'Giờ bắt đầu không hợp lệ.'
+    });
+}
+
+if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime || '')) {
+    return res.status(400).json({
+        message: 'Giờ kết thúc không hợp lệ.'
+    });
+}
+
+if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    return res.status(400).json({
+        message: 'Giờ kết thúc phải sau giờ bắt đầu.'
+    });
+}
+    
     if (String(semester).trim().length < 6 || String(semester).trim().length > 20)
         return res.status(400).json({ message: 'Học kỳ học phải dài từ 6 đến 20 ký tự.' });
     if (!/^[A-Z0-9-]{2,20}$/.test(normalizedSectionCode))
