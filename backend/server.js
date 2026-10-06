@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://projectcuahoangvu-1.onrender.com',
+  'https://studentmanagement-9quh.onrender.com',
   ...(process.env.FRONTEND_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean)
 ];
 
