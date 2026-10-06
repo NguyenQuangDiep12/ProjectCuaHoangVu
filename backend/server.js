@@ -1769,136 +1769,334 @@ app.post('/api/sections', authMiddleware, requireRoles(...ROLE_STAFF), async (re
 app.put('/api/sections/:id', authMiddleware, requireRoles(...ROLE_STAFF), async (req, res) => {
   try {
     const { id } = req.params;
-    const { courseId, sectionCode, building, room, dayOfWeek, startTime, endTime, semester, maxStudents, status, startDate, endDate } = req.body;
+
+    const {
+      courseId,
+      sectionCode,
+      building,
+      room,
+      dayOfWeek,
+      startTime,
+      endTime,
+      semester,
+      maxStudents,
+      status,
+      startDate,
+      endDate
+    } = req.body;
+
     const normalizedSectionCode = String(sectionCode || '').trim();
 
-    const current = await get('SELECT * FROM sections WHERE id = ?', [id]);
-    if (!current) {
-      return res.status(404).json({ message: 'Không tìm thấy lớp học phần.' });
-    }
-
-    if (req.user.role === 'lecturer' && Number(current.lecturerId) !== Number(req.user.id)) {
-      return res.status(403).json({ message: 'Bạn chỉ được sửa lớp học phần do mình tạo.' });
-    }
-    const enrollmentCount = await get("SELECT COUNT(*) AS count FROM enrollments WHERE sectionId = ?", [id]);
-    const datesError = validateSectionDates({ startDate, endDate });
-    if (datesError) return res.status(400).json({ message: datesError });
-    if (status && !["open", "closed"].includes(status))
-        return res.status(400).json({ message: "Trạng thái đăng ký không hợp lệ." });
-
-    if (!courseId || !normalizedSectionCode || ...) {
-    return res.status(400).json({
-        message: 'Thông tin lớp học không hợp lệ.'
-    });
-}
-
-if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || '')) {
-    return res.status(400).json({
-        message: 'Giờ bắt đầu không hợp lệ.'
-    });
-}
-
-if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime || '')) {
-    return res.status(400).json({
-        message: 'Giờ kết thúc không hợp lệ.'
-    });
-}
-
-if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-    return res.status(400).json({
-        message: 'Giờ kết thúc phải sau giờ bắt đầu.'
-    });
-}
-    
-    if (String(semester).trim().length < 6 || String(semester).trim().length > 20)
-        return res.status(400).json({ message: 'Học kỳ học phải dài từ 6 đến 20 ký tự.' });
-    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedSectionCode))
-        return res.status(400).json({ message: 'Mã lớp học phần phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.' });
-    const courseOwner = await get("SELECT id, ownerUserId FROM courses WHERE id = ?", [courseId]);
-    if (!courseOwner) return res.status(400).json({ message: "Môn học không tồn tại." });
-    if (req.user.role === "lecturer" && Number(courseOwner.ownerUserId) !== Number(req.user.id))
-        return res.status(403).json({ message: "Bạn chỉ được mở lớp cho môn học do mình tạo." });
-    if (String(room).trim().length < 4 || String(room).trim().length > 30)
-        return res.status(400).json({ message: "Phòng học phải từ 4 đến 30 ký tự." });
-    if (!BUILDINGS.includes(String(building).trim()))
-        return res.status(400).json({ message: "Tòa nhà không hợp lệ. Chọn Khu A, Khu B, A1 hoặc Khu C." });
-    if (
-        !Number.isInteger(Number(maxStudents)) ||
-        Number(maxStudents) < Number(enrollmentCount.count) ||
-        Number(maxStudents) > 120
-    ) {
-        return res.status(400).json({ message: `Sĩ số tối đa phải từ số đã đăng ký (${enrollmentCount.count}) đến 120.` });
-    }
-    const datesChanged = startDate !== current.startDate || endDate !== current.endDate;
-    if (datesChanged) {
-        const hasSectionGrades = await get("SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1", [
-            current.courseId,
-            current.semester,
-        ]);
-        if (Number(enrollmentCount.count) > 0 || hasSectionGrades) {
-            return res
-                .status(400)
-                .json({
-                    message:
-                        "Không thể đổi ngày học phần khi lớp đã có sinh viên đăng ký hoặc điểm, hãy đóng lớp và giữ nguyên lịch sử.",
-                });
-        }
-    }
-    if (Number(courseId) !== Number(current.courseId) || String(semester) !== current.semester) {
-        const hasGrades = await get("SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1", [
-            current.courseId,
-            current.semester,
-        ]);
-        if (Number(enrollmentCount.count) || hasGrades)
-            return res
-                .status(400)
-                .json({ message: "Không thể đổi môn/học kỳ khi lớp đã có sinh viên đăng ký hoặc đã phát sinh điểm." });
-    }
-
-    const conflict = await findSectionConflict({
-        building,
-        room,
-        dayOfWeek,
-        startTime,
-        endTime,
-        startDate,
-        endDate,
-        semester,
-        lecturerId: current.lecturerId,
-        excludeId: id,
-    });
-    if (conflict) return res.status(400).json({ message: buildSectionConflictMessage(conflict, dayOfWeek) });
-    const scheduleConflict = await findScheduleConflict({
-        semester,
-        dayOfWeek,
-        startTime,
-        endTime,
-        className: normalizedSectionCode,
-        building,
-        room,
-        createdBy: current.lecturerId,
-        startDate,
-        endDate,
-    });
-    if (scheduleConflict) return res.status(400).json({ message: buildConflictMessage(scheduleConflict, dayOfWeek) });
-
-    const duplicate = await get('SELECT id FROM sections WHERE LOWER(sectionCode) = LOWER(?) AND id != ?', [normalizedSectionCode, id]);
-    if (duplicate) {
-      return res.status(400).json({ message: 'Mã lớp học phần đã tồn tại.' });
-    }
-
-    await run(
-      `UPDATE sections
-       SET courseId = ?, sectionCode = ?, building = ?, room = ?, dayOfWeek = ?, startTime = ?, endTime = ?, semester = ?, maxStudents = ?, status = ?, startDate = ?, endDate = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [courseId, normalizedSectionCode, building.trim(), room.trim(), dayOfWeek, startTime, endTime, semester.trim(), Number(maxStudents), status || 'open', startDate, endDate, id]
+    // Kiểm tra lớp học phần có tồn tại không
+    const current = await get(
+      'SELECT * FROM sections WHERE id = ?',
+      [id]
     );
 
+    if (!current) {
+      return res.status(404).json({
+        message: 'Không tìm thấy lớp học phần.'
+      });
+    }
+
+    // Giảng viên chỉ được sửa lớp do mình tạo
+    if (
+      req.user.role === 'lecturer' &&
+      Number(current.lecturerId) !== Number(req.user.id)
+    ) {
+      return res.status(403).json({
+        message: 'Bạn chỉ được sửa lớp học phần do mình tạo.'
+      });
+    }
+
+    // Lấy số sinh viên đã đăng ký
+    const enrollmentCount = await get(
+      'SELECT COUNT(*) AS count FROM enrollments WHERE sectionId = ?',
+      [id]
+    );
+
+    // Kiểm tra ngày bắt đầu / kết thúc
+    const datesError = validateSectionDates({
+      startDate,
+      endDate
+    });
+
+    if (datesError) {
+      return res.status(400).json({
+        message: datesError
+      });
+    }
+
+    // Kiểm tra trạng thái
+    if (status && !['open', 'closed'].includes(status)) {
+      return res.status(400).json({
+        message: 'Trạng thái đăng ký không hợp lệ.'
+      });
+    }
+
+    // Kiểm tra các thông tin bắt buộc
+    if (
+      !courseId ||
+      !normalizedSectionCode ||
+      !String(building || '').trim() ||
+      !String(room || '').trim() ||
+      !String(semester || '').trim() ||
+      !WEEKDAY_ORDER.includes(dayOfWeek)
+    ) {
+      return res.status(400).json({
+        message: 'Thông tin lớp học không hợp lệ.'
+      });
+    }
+
+    // Kiểm tra định dạng giờ bắt đầu
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime || '')) {
+      return res.status(400).json({
+        message: 'Giờ bắt đầu không hợp lệ.'
+      });
+    }
+
+    // Kiểm tra định dạng giờ kết thúc
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime || '')) {
+      return res.status(400).json({
+        message: 'Giờ kết thúc không hợp lệ.'
+      });
+    }
+
+    // Kiểm tra giờ kết thúc phải sau giờ bắt đầu
+    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      return res.status(400).json({
+        message: 'Giờ kết thúc phải sau giờ bắt đầu.'
+      });
+    }
+
+    // Kiểm tra học kỳ
+    if (
+      String(semester).trim().length < 6 ||
+      String(semester).trim().length > 20
+    ) {
+      return res.status(400).json({
+        message: 'Học kỳ học phải dài từ 6 đến 20 ký tự.'
+      });
+    }
+
+    // Kiểm tra mã lớp học phần
+    if (!/^[A-Z0-9-]{2,20}$/.test(normalizedSectionCode)) {
+      return res.status(400).json({
+        message:
+          'Mã lớp học phần phải gồm 2–20 ký tự in hoa, số hoặc dấu gạch ngang.'
+      });
+    }
+
+    // Kiểm tra môn học
+    const courseOwner = await get(
+      'SELECT id, ownerUserId FROM courses WHERE id = ?',
+      [courseId]
+    );
+
+    if (!courseOwner) {
+      return res.status(400).json({
+        message: 'Môn học không tồn tại.'
+      });
+    }
+
+    // Giảng viên chỉ được mở lớp cho môn mình tạo
+    if (
+      req.user.role === 'lecturer' &&
+      Number(courseOwner.ownerUserId) !== Number(req.user.id)
+    ) {
+      return res.status(403).json({
+        message: 'Bạn chỉ được mở lớp cho môn học do mình tạo.'
+      });
+    }
+
+    // Kiểm tra phòng học
+    if (
+      String(room).trim().length < 4 ||
+      String(room).trim().length > 30
+    ) {
+      return res.status(400).json({
+        message: 'Phòng học phải từ 4 đến 30 ký tự.'
+      });
+    }
+
+    // Kiểm tra tòa nhà
+    if (!BUILDINGS.includes(String(building).trim())) {
+      return res.status(400).json({
+        message:
+          'Tòa nhà không hợp lệ. Chọn Khu A, Khu B, A1 hoặc Khu C.'
+      });
+    }
+
+    // Kiểm tra sĩ số tối đa
+    if (
+      !Number.isInteger(Number(maxStudents)) ||
+      Number(maxStudents) < Number(enrollmentCount.count) ||
+      Number(maxStudents) > 120
+    ) {
+      return res.status(400).json({
+        message:
+          `Sĩ số tối đa phải từ số đã đăng ký (${enrollmentCount.count}) đến 120.`
+      });
+    }
+
+    // Kiểm tra thay đổi ngày học
+    const datesChanged =
+      startDate !== current.startDate ||
+      endDate !== current.endDate;
+
+    if (datesChanged) {
+      const hasSectionGrades = await get(
+        'SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1',
+        [
+          current.courseId,
+          current.semester
+        ]
+      );
+
+      if (
+        Number(enrollmentCount.count) > 0 ||
+        hasSectionGrades
+      ) {
+        return res.status(400).json({
+          message:
+            'Không thể đổi ngày học phần khi lớp đã có sinh viên đăng ký hoặc điểm, hãy đóng lớp và giữ nguyên lịch sử.'
+        });
+      }
+    }
+
+    // Không cho đổi môn / học kỳ nếu đã có sinh viên hoặc điểm
+    if (
+      Number(courseId) !== Number(current.courseId) ||
+      String(semester) !== current.semester
+    ) {
+      const hasGrades = await get(
+        'SELECT id FROM grades WHERE courseId = ? AND semester = ? LIMIT 1',
+        [
+          current.courseId,
+          current.semester
+        ]
+      );
+
+      if (
+        Number(enrollmentCount.count) > 0 ||
+        hasGrades
+      ) {
+        return res.status(400).json({
+          message:
+            'Không thể đổi môn/học kỳ khi lớp đã có sinh viên đăng ký hoặc đã phát sinh điểm.'
+        });
+      }
+    }
+
+    // Kiểm tra trùng phòng / thời gian / lịch lớp
+    const conflict = await findSectionConflict({
+      building,
+      room,
+      dayOfWeek,
+      startTime,
+      endTime,
+      startDate,
+      endDate,
+      semester,
+      lecturerId: current.lecturerId,
+      excludeId: id
+    });
+
+    if (conflict) {
+      return res.status(400).json({
+        message: buildSectionConflictMessage(
+          conflict,
+          dayOfWeek
+        )
+      });
+    }
+
+    // Kiểm tra xung đột lịch
+    const scheduleConflict = await findScheduleConflict({
+      semester,
+      dayOfWeek,
+      startTime,
+      endTime,
+      className: normalizedSectionCode,
+      building,
+      room,
+      createdBy: current.lecturerId,
+      startDate,
+      endDate
+    });
+
+    if (scheduleConflict) {
+      return res.status(400).json({
+        message: buildConflictMessage(
+          scheduleConflict,
+          dayOfWeek
+        )
+      });
+    }
+
+    // Kiểm tra trùng mã lớp
+    const duplicate = await get(
+      'SELECT id FROM sections WHERE LOWER(sectionCode) = LOWER(?) AND id != ?',
+      [
+        normalizedSectionCode,
+        id
+      ]
+    );
+
+    if (duplicate) {
+      return res.status(400).json({
+        message: 'Mã lớp học phần đã tồn tại.'
+      });
+    }
+
+    // Cập nhật lớp học phần
+    await run(
+      `UPDATE sections
+       SET courseId = ?,
+           sectionCode = ?,
+           building = ?,
+           room = ?,
+           dayOfWeek = ?,
+           startTime = ?,
+           endTime = ?,
+           semester = ?,
+           maxStudents = ?,
+           status = ?,
+           startDate = ?,
+           endDate = ?,
+           updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        courseId,
+        normalizedSectionCode,
+        building.trim(),
+        room.trim(),
+        dayOfWeek,
+        startTime,
+        endTime,
+        semester.trim(),
+        Number(maxStudents),
+        status || 'open',
+        startDate,
+        endDate,
+        id
+      ]
+    );
+
+    // Lấy lại dữ liệu sau khi cập nhật
     const section = await getCurrentSectionWithCount(id);
-    return res.json({ message: 'Cập nhật lớp học phần thành công.', section });
+
+    return res.json({
+      message: 'Cập nhật lớp học phần thành công.',
+      section
+    });
+
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'Lỗi server khi cập nhật lớp học phần.' });
+
+    return res.status(500).json({
+      message: 'Lỗi server khi cập nhật lớp học phần.'
+    });
   }
 });
 
