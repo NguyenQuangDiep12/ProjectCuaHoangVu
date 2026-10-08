@@ -1,0 +1,37 @@
+@startuml
+title Use case - Admin
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+actor Admin
+rectangle "Quản trị hệ thống" {
+ usecase "Đăng nhập" as Login
+ usecase "Xem thống kê hệ thống" as Stats
+ usecase "Xem danh sách tài khoản" as Users
+ usecase "Quản lý hồ sơ sinh viên\n(thêm/sửa/xóa/xem)" as Students
+ usecase "Quản lý hồ sơ giảng viên\n(thêm/sửa/xóa/xem)" as Lecturers
+ usecase "Quản lý môn học" as Courses
+ usecase "Quản lý lớp học phần" as Sections
+ usecase "Xem danh sách ghi danh của lớp" as Roster
+ usecase "Quản lý điểm" as Grades
+ usecase "Quản lý lịch học" as Schedules
+ usecase "Quản lý tin tức" as News
+ usecase "Xem và phản hồi ý kiến sinh viên" as Feedback
+}
+Admin --> Login
+Admin --> Stats
+Admin --> Users
+Admin --> Students
+Admin --> Lecturers
+Admin --> Courses
+Admin --> Sections
+Admin --> Roster
+Admin --> Grades
+Admin --> Schedules
+Admin --> News
+Admin --> Feedback
+note bottom of Users
+  API chỉ có GET /api/users để xem danh sách;
+  không vẽ CRUD tài khoản.
+end note
+@enduml

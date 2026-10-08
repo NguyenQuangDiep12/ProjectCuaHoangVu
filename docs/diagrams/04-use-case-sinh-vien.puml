@@ -1,0 +1,35 @@
+@startuml
+title Use case - Sinh viên
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+actor Sinh_viên as Student
+rectangle "Cổng sinh viên" {
+ usecase "Đăng ký tài khoản/đăng nhập" as Auth
+ usecase "Xem hồ sơ cá nhân" as Profile
+ usecase "Xem lớp học phần" as Browse
+ usecase "Đăng ký lớp học phần" as Enroll
+ usecase "Hủy đăng ký\n(nếu lớp còn mở)" as Unenroll
+ usecase "Xem lớp đã đăng ký" as MySections
+ usecase "Xem điểm và kết quả học tập" as Grades
+ usecase "Xuất bảng điểm" as Export
+ usecase "Xem thời khóa biểu" as Schedule
+ usecase "Xem tin tức" as News
+ usecase "Gửi/xem ý kiến" as Feedback
+}
+Student --> Auth
+Student --> Profile
+Student --> Browse
+Student --> Enroll
+Student --> Unenroll
+Student --> MySections
+Student --> Grades
+Student --> Export
+Student --> Schedule
+Student --> News
+Student --> Feedback
+note bottom of Enroll
+ Lớp đang mở, còn chỗ; không ghi danh
+ lớp trùng môn/học kỳ hoặc trùng lịch.
+end note
+@enduml

@@ -1,0 +1,58 @@
+@startuml
+title Hệ thống quản lý sinh viên - Use case tổng quan
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+actor Khách as Guest
+actor Admin
+actor Giảng_viên as Lecturer
+actor Sinh_viên as Student
+rectangle "Student Management System" {
+ usecase "Đăng ký tài khoản\n(Sinh viên/Giảng viên)" as Register
+ usecase "Đăng nhập" as Login
+ usecase "Xem dashboard/thống kê" as Dashboard
+ usecase "Quản lý hồ sơ sinh viên" as Students
+ usecase "Quản lý hồ sơ giảng viên" as Lecturers
+ usecase "Quản lý môn học" as Courses
+ usecase "Quản lý lớp học phần" as Sections
+ usecase "Xem danh sách sinh viên\ntrong lớp học phần" as Roster
+ usecase "Đăng ký/hủy đăng ký\nlớp học phần" as Enroll
+ usecase "Quản lý điểm" as Grades
+ usecase "Xem điểm cá nhân/xuất bảng điểm" as MyGrades
+ usecase "Quản lý lịch học" as Schedules
+ usecase "Xem thời khóa biểu cá nhân" as MySchedule
+ usecase "Quản lý tin tức" as NewsAdmin
+ usecase "Xem tin tức" as NewsRead
+ usecase "Gửi/xem ý kiến" as Feedback
+ usecase "Xem/phản hồi ý kiến sinh viên" as FeedbackAdmin
+}
+Guest --> Register
+Guest --> Login
+Admin --> Login
+Lecturer --> Login
+Student --> Login
+Admin --> Dashboard
+Lecturer --> Dashboard
+Admin --> Students
+Lecturer --> Students
+Admin --> Lecturers
+Admin --> Courses
+Lecturer --> Courses
+Admin --> Sections
+Lecturer --> Sections
+Admin --> Roster
+Lecturer --> Roster
+Student --> Enroll
+Admin --> Grades
+Lecturer --> Grades
+Student --> MyGrades
+Student --> MySchedule
+Admin --> Schedules
+Lecturer --> Schedules
+Admin --> NewsAdmin
+Admin --> NewsRead
+Lecturer --> NewsRead
+Student --> NewsRead
+Student --> Feedback
+Admin --> FeedbackAdmin
+@enduml

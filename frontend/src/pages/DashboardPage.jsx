@@ -23,10 +23,10 @@ const roleSections = {
     { key: 'sections', label: 'Lớp học phần', description: 'Theo dõi lớp giảng viên tạo và số lượng đăng ký' },
     { key: 'feedbacks', label: 'Ý kiến sinh viên', description: 'Xem và phản hồi ý kiến gửi trực tiếp tới admin' },
     { key: 'news', label: 'Tin tức', description: 'Đăng và quản lý thông báo để giảng viên, sinh viên cùng theo dõi' },
-    { key: 'users', label: 'Tài khoản', description: 'Theo dõi người dùng trong hệ thống' }
+    // { key: 'users', label: 'Tài khoản', description: 'Theo dõi người dùng trong hệ thống' }
   ],
   lecturer: [
-    { key: 'overview', label: 'Tổng quan', description: 'Xem thống kê học tập' },
+    // { key: 'overview', label: 'Tổng quan', description: 'Xem thống kê học tập' },
     // { key: 'students', label: 'Hồ sơ sinh viên', description: 'Cập nhật hồ sơ học tập' },
     { key: 'courses', label: 'Môn học', description: 'Tự tạo môn học mới trước khi mở lớp học phần' },
     { key: 'grades', label: 'Nhập điểm', description: 'Nhập và chỉnh sửa điểm số' },
@@ -39,7 +39,7 @@ const roleSections = {
     { key: 'overview', label: 'Tổng quan', description: 'Thông tin nhanh về học tập' },
     { key: 'profile', label: 'Thông tin cá nhân', description: 'Xem hồ sơ cá nhân' },
     { key: 'grades', label: 'Điểm số', description: 'Xem dashboard bảng điểm và kết quả học tập' },
-    { key: 'schedule', label: 'Lịch học', description: 'Lịch học tự động hiển thị theo môn đã đăng ký' },
+    // { key: 'schedule', label: 'Lịch học', description: 'Lịch học tự động hiển thị theo môn đã đăng ký' },
     { key: 'weeklySchedule', label: 'Thời khóa biểu tuần', description: 'Xem thời khóa biểu tuần dạng lưới theo môn đã đăng ký' },
     { key: 'registration', label: 'Đăng ký môn', description: 'Đăng ký hoặc hủy đăng ký lớp học phần' },
     { key: 'news', label: 'Tin tức', description: 'Xem các thông báo mới nhất từ admin' },

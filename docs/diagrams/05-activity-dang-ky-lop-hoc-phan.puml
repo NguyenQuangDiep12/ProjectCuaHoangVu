@@ -1,0 +1,48 @@
+@startuml
+title Activity - Đăng ký lớp học phần
+skinparam shadowing false
+|Sinh viên|
+start
+:Chọn lớp học phần;
+:Gửi yêu cầu đăng ký;
+|Hệ thống|
+:Xác thực token và vai trò student;
+if (Token hợp lệ?) then (Có)
+ :Tìm hồ sơ sinh viên và lớp học phần;
+ if (Hai bản ghi tồn tại?) then (Có)
+  if (Lớp đang mở?) then (Có)
+   if (Đã ghi danh lớp này?) then (Có)
+    :Từ chối - đã đăng ký;
+   else (Chưa)
+    if (Lớp khác cùng môn/học kỳ?) then (Có)
+     :Từ chối - trùng môn/học kỳ;
+    else (Không)
+     if (Trùng lịch với lớp đã đăng ký?) then (Có)
+      :Từ chối - trùng lịch;
+     else (Không)
+      if (Đạt sĩ số tối đa?) then (Có)
+       :Từ chối - lớp đủ sĩ số;
+      else (Không)
+       :Tạo ghi danh;
+       if (Ghi thành công?) then (Có)
+        :Thông báo đăng ký thành công;
+       else (Không)
+        :Báo lỗi ghi danh / xung đột đồng thời;
+       endif
+      endif
+     endif
+    endif
+   endif
+  else (Không)
+   :Từ chối - lớp đã đóng;
+  endif
+ else (Không)
+  :Báo không tìm thấy sinh viên hoặc lớp;
+ endif
+else (Không)
+ :Từ chối - chưa xác thực / sai quyền;
+endif
+|Sinh viên|
+:Nhận kết quả;
+stop
+@enduml

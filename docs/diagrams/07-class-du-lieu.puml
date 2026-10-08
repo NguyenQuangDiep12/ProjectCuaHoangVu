@@ -1,0 +1,116 @@
+@startuml
+title Mô hình dữ liệu chính - Student Management System
+hide methods
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+class users {
+  id: INTEGER <<PK>>
+  username: TEXT <<UNIQUE>>
+  password: TEXT
+  role: admin | lecturer | student
+  fullName: TEXT
+  email: TEXT <<UNIQUE>>
+  studentCode: TEXT?
+  lecturerCode: TEXT?
+}
+class students {
+  id: INTEGER <<PK>>
+  studentCode: TEXT <<UNIQUE>>
+  fullName, email: TEXT
+  className, major: TEXT
+  userId: INTEGER? <<FK, UNIQUE>>
+}
+class lecturers {
+  id: INTEGER <<PK>>
+  lecturerCode: TEXT <<UNIQUE>>
+  fullName, email: TEXT
+  department, degree: TEXT
+  userId: INTEGER? <<FK, UNIQUE>>
+}
+class courses {
+  id: INTEGER <<PK>>
+  courseCode: TEXT <<UNIQUE>>
+  courseName: TEXT
+  credits: INTEGER
+  ownerUserId: INTEGER? <<FK>>
+}
+class sections {
+  id: INTEGER <<PK>>
+  courseId: INTEGER <<FK>>
+  sectionCode: TEXT <<UNIQUE>>
+  lecturerId: INTEGER <<FK users.id>>
+  semester: TEXT
+  maxStudents: INTEGER
+  status: open | closed
+  dayOfWeek, startTime, endTime: TEXT
+}
+class enrollments {
+  id: INTEGER <<PK>>
+  sectionId: INTEGER <<FK>>
+  studentId: INTEGER <<FK>>
+  UNIQUE(sectionId, studentId)
+}
+class grades {
+  id: INTEGER <<PK>>
+  studentId, courseId: INTEGER <<FK>>
+  semester: TEXT
+  midterm, final, total: REAL
+  letterGrade: TEXT
+  UNIQUE(studentId, courseId, semester)
+}
+class schedules {
+  id: INTEGER <<PK>>
+  courseId: INTEGER <<FK>>
+  className: TEXT
+  building, room: TEXT
+  dayOfWeek, startTime, endTime: TEXT
+  semester: TEXT
+  createdBy: INTEGER? <<FK users.id>>
+}
+class feedbacks {
+  id: INTEGER <<PK>>
+  studentId: INTEGER <<FK>>
+  subject, message: TEXT
+  status: new | in_progress | resolved
+  adminReply: TEXT
+}
+class news {
+  id: INTEGER <<PK>>
+  title, summary, content: TEXT
+  category: TEXT
+  status: draft | published
+  isImportant: BOOLEAN
+  createdBy: INTEGER? <<FK users.id>>
+}
+class grade_audit {
+  id: INTEGER <<PK>>
+  gradeId: INTEGER
+  actorUserId: INTEGER?
+  action: created | updated | deleted
+  beforeData, afterData: TEXT
+}
+
+users "0..1" -- "0..1" students : userId
+users "0..1" -- "0..1" lecturers : userId
+users "1" -- "0..*" courses : ownerUserId
+users "1" -- "0..*" sections : lecturerId
+courses "1" -- "0..*" sections : courseId
+students "1" -- "0..*" enrollments : studentId
+sections "1" -- "0..*" enrollments : sectionId
+students "1" -- "0..*" grades : studentId
+courses "1" -- "0..*" grades : courseId
+courses "1" -- "0..*" schedules : courseId
+users "0..1" -- "0..*" schedules : createdBy
+students "1" -- "0..*" feedbacks : studentId
+users "0..1" -- "0..*" news : createdBy
+
+note bottom of grade_audit
+  Schema hiện tại không khai báo khóa ngoại
+  từ grade_audit.gradeId/actorUserId.
+end note
+note bottom of courses
+  ownerUserId được thêm qua migration khi khởi tạo DB.
+  sections và schedules là hai khái niệm riêng.
+end note
+@enduml

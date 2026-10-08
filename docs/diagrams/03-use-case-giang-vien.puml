@@ -1,0 +1,34 @@
+@startuml
+title Use case - Giảng viên
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+actor Giảng_viên as Lecturer
+rectangle "Nghiệp vụ giảng viên" {
+ usecase "Đăng ký tài khoản/đăng nhập" as Auth
+ usecase "Xem thống kê học tập" as Stats
+ usecase "Xem/cập nhật hồ sơ sinh viên" as Students
+ usecase "Quản lý môn học" as Courses
+ usecase "Mở/quản lý lớp học phần" as Sections
+ usecase "Xem danh sách sinh viên đã ghi danh" as Roster
+ usecase "Nhập/sửa/xóa điểm" as Grades
+ usecase "Tạo/sửa/xóa lịch học" as Schedules
+ usecase "Theo dõi tin tức" as News
+}
+Lecturer --> Auth
+Lecturer --> Stats
+Lecturer --> Students
+Lecturer --> Courses
+Lecturer --> Sections
+Lecturer --> Roster
+Lecturer --> Grades
+Lecturer --> Schedules
+Lecturer --> News
+note right of Courses
+ Chỉ quản lý môn mình tạo và mở lớp
+ cho môn thuộc quyền sở hữu.
+end note
+note right of Grades
+ Chỉ chấm/sửa điểm lớp do mình phụ trách.
+end note
+@enduml

@@ -1,0 +1,40 @@
+@startuml
+title Activity - Nhập điểm
+skinparam shadowing false
+|Giảng viên/Admin|
+start
+:Chọn sinh viên, môn, học kỳ;
+:Nhập điểm giữa kỳ, cuối kỳ, ghi chú;
+:Gửi yêu cầu lưu điểm;
+|Hệ thống|
+:Xác thực vai trò admin/lecturer;
+if (Có quyền?) then (Có)
+ :Kiểm tra dữ liệu bắt buộc, điểm 0..10;
+ if (Dữ liệu hợp lệ?) then (Có)
+  :Kiểm tra ghi danh đúng môn/học kỳ;
+  if (Sinh viên đã ghi danh?) then (Có)
+   if (Giảng viên phụ trách lớp?) then (Có)
+    if (Đã có điểm môn/học kỳ?) then (Có)
+     :Từ chối - bản ghi điểm trùng;
+    else (Chưa)
+     :Tính tổng = 0.4 * giữa kỳ + 0.6 * cuối kỳ;
+     :Làm tròn 1 chữ số và xếp loại chữ;
+     :Lưu điểm và ghi grade_audit;
+     :Trả kết quả thành công;
+    endif
+   else (Không áp dụng / Không)
+    :Giảng viên không phụ trách - từ chối;
+   endif
+  else (Không)
+   :Từ chối - sinh viên chưa ghi danh;
+  endif
+ else (Không)
+  :Trả lỗi dữ liệu không hợp lệ;
+ endif
+else (Không)
+ :Từ chối - chưa xác thực / sai quyền;
+endif
+|Giảng viên/Admin|
+:Nhận kết quả;
+stop
+@enduml
